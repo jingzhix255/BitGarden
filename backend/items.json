@@ -1,0 +1,32 @@
+{
+  "_comment": "Source of truth for purchasable items. Costs/emojis live here; Godot controls which items exist (sent via GODOT_READY handshake). Items present here but absent from Godot are harmless; items Godot sends but absent here get a default cost of 5 coins.",
+  "seeds": [
+    { "id": "pumpkin_seeds",     "name": "Pumpkin",     "emoji": "🎃", "cost": 3,  "growth_seconds": 120, "crop": "pumpkin"     },
+    { "id": "strawberry_seeds",  "name": "Strawberry",  "emoji": "🍓", "cost": 4,  "growth_seconds": 180, "crop": "strawberry"  },
+    { "id": "cherry_seeds",      "name": "Cherry",      "emoji": "🍒", "cost": 4,  "growth_seconds": 150, "crop": "cherry"      },
+    { "id": "sunflower_seeds",   "name": "Sunflower",   "emoji": "🌻", "cost": 3,  "growth_seconds": 90,  "crop": "sunflower"   },
+    { "id": "broccoli_seeds",    "name": "Broccoli",    "emoji": "🥦", "cost": 3,  "growth_seconds": 120, "crop": "broccoli"    },
+    { "id": "blackberry_seeds",  "name": "Blackberry",  "emoji": "🫐", "cost": 5,  "growth_seconds": 200, "crop": "blackberry"  },
+    { "id": "banana_seeds",      "name": "Banana",      "emoji": "🍌", "cost": 4,  "growth_seconds": 180, "crop": "banana"      },
+    { "id": "peach_seeds",       "name": "Peach",       "emoji": "🍑", "cost": 4,  "growth_seconds": 150, "crop": "peach"       },
+    { "id": "cabbage_seeds",     "name": "Cabbage",     "emoji": "🥬", "cost": 2,  "growth_seconds": 90,  "crop": "cabbage"     },
+    { "id": "apricot_seeds",     "name": "Apricot",     "emoji": "🟠", "cost": 5,  "growth_seconds": 210, "crop": "apricot"     },
+    { "id": "cauliflower_seeds", "name": "Cauliflower", "emoji": "🤍", "cost": 3,  "growth_seconds": 120, "crop": "cauliflower" },
+    { "id": "watermelon_seeds",  "name": "Watermelon",  "emoji": "🍉", "cost": 5,  "growth_seconds": 240, "crop": "watermelon"  },
+    { "id": "tomato_seeds",      "name": "Tomato",      "emoji": "🍅", "cost": 3,  "growth_seconds": 120, "crop": "tomato"      },
+    { "id": "corn_seeds",        "name": "Corn",        "emoji": "🌽", "cost": 2,  "growth_seconds": 60,  "crop": "corn"        },
+    { "id": "carrot_seeds",      "name": "Carrot",      "emoji": "🥕", "cost": 2,  "growth_seconds": 90,  "crop": "carrot"      }
+  ],
+  "animals": [
+    { "id": "cow",      "name": "Cow",      "emoji": "🐄", "cost": 10 },
+    { "id": "pelican",  "name": "Pelican",  "emoji": "🦢", "cost": 8  },
+    { "id": "sheep",    "name": "Sheep",    "emoji": "🐑", "cost": 8  },
+    { "id": "fox",      "name": "Fox",      "emoji": "🦊", "cost": 12 },
+    { "id": "pig",      "name": "Pig",      "emoji": "🐷", "cost": 7  },
+    { "id": "goat",     "name": "Goat",     "emoji": "🐐", "cost": 8  },
+    { "id": "ostrich",  "name": "Ostrich",  "emoji": "🦤", "cost": 15 },
+    { "id": "rabbit",   "name": "Rabbit",   "emoji": "🐰", "cost": 6  },
+    { "id": "capybara", "name": "Capybara", "emoji": "🦦", "cost": 20 }
+  ],
+  "fertilizer_skip_seconds": 86400
+}

@@ -1,0 +1,14 @@
+{
+  "seeds": [
+    { "id": "pumpkin_seeds",    "name": "Pumpkin",    "emoji": "🎃", "cost": 3,  "growth_seconds": 120, "crop": "pumpkin"    },
+    { "id": "corn_seeds",       "name": "Corn",       "emoji": "🌽", "cost": 2,  "growth_seconds": 60,  "crop": "corn"       },
+    { "id": "strawberry_seeds", "name": "Strawberry", "emoji": "🍓", "cost": 4,  "growth_seconds": 180, "crop": "strawberry" },
+    { "id": "carrot_seeds",     "name": "Carrot",     "emoji": "🥕", "cost": 2,  "growth_seconds": 90,  "crop": "carrot"     }
+  ],
+  "animals": [
+    { "id": "chicken", "name": "Chicken", "emoji": "🐔", "cost": 5  },
+    { "id": "cow",     "name": "Cow",     "emoji": "🐄", "cost": 10 },
+    { "id": "sheep",   "name": "Sheep",   "emoji": "🐑", "cost": 8  }
+  ],
+  "fertilizer_skip_seconds": 1800
+}

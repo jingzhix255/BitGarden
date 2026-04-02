@@ -1,0 +1,11 @@
+{
+    "archetypes": {
+      "basic_5_stage": { "costs": [ { "w":1, "f":0 }, { "w":2, "f":1 }, { "w":3, "f":2 }, { "w":4, "f":3 } ] },
+      "advanced_10_stage": { "costs": [ { "w":1, "f":0 }, { "w":2, "f":2 }, { "w":3, "f":2 }, { "w":4, "f":4 }, { "w":6, "f":5 }, { "w":8, "f":7 }, { "w":9, "f":9 }, { "w":10, "f":9 },  { "w":15, "f":10 } ] }
+    },
+    "plants": {
+      "succulent": { "name": "Cozy Succulent", "archetype": "basic_5_stage", "spriteBase": "succulent" },
+      "cactus": { "name": "Desert Cactus", "archetype": "basic_5_stage", "spriteBase": "cactus" },
+      "bonsai": { "name": "Office Bonsai", "archetype": "advanced_10_stage", "spriteBase": "bonsai" }
+    }
+  }

@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+.npm/
+
+# Database (local only — do not commit user data)
+backend/bitgarden.db
+backend/bitgarden.db-shm
+backend/bitgarden.db-wal
+
+# Build outputs
+frontend/dist/
+*.pck
+*.wasm
+
+# OS / editor
+.DS_Store
+.env
+.env.local
+*.local
+
+# Logs
+*.log
+npm-debug.log*
