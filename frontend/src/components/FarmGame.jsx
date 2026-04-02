@@ -268,7 +268,6 @@ export default function FarmGame() {
         const animals = (event.data.animals ?? []).map(toGodotName);
         setAvailablePlants(plants);
         setAvailableAnimals(animals);
-        console.log('[Bridge] GODOT_READY ✅  plants:', plants, '| animals:', animals);
         return;
       }
 
@@ -292,12 +291,6 @@ export default function FarmGame() {
             type === 'USE_FERTILIZER' || type === 'FERTILIZE_PLANT') {
           flash("👀 You're a visitor — only the owner can tend this farm");
         }
-        if (type !== 'GODOT_READY') {
-          console.warn(
-            `[${type}] BLOCKED — loggedIn=${myId} viewedFarm=${theirId}` +
-            ` ref=${viewedUserIdRef.current} payloadOwner=${payloadFarmOwner}`
-          );
-        }
         return;
       }
 
@@ -305,7 +298,6 @@ export default function FarmGame() {
       if (type === 'PLANT_SEED') {
         const pot_id = normalizePotId(payload.pot_id);
         const seed   = toGodotName(payload.seed);
-        console.log(`[PLANT_SEED] pot_id="${pot_id}" seed="${seed}"`);
         const res = await fetch('/api/farm/plant-seed', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user_id: myId, pot_id, seed }),
@@ -317,12 +309,8 @@ export default function FarmGame() {
           flash(`🌱 Planted ${seed}!`);
         } else {
           const r = await res.json();
-          console.error('[PLANT_SEED] API error:', r.error);
           flash(`❌ ${r.error}`);
-          if (res.status === 400) {
-            console.warn('[PLANT_SEED] Force-syncing Godot with DB…');
-            loadFarm();
-          }
+          if (res.status === 400) loadFarm();
         }
       }
 
@@ -349,7 +337,6 @@ export default function FarmGame() {
       if (type === 'HARVEST_CROP' || type === 'HARVEST_PLANT') {
         const pot_id = normalizePotId(payload.pot_id);
         const crop   = toGodotName(payload.crop ?? payload.seed);
-        console.log(`[${type}] pot_id="${pot_id}" crop="${crop}"`);
         const res = await fetch('/api/farm/harvest', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user_id: myId, pot_id, crop, viewed_farm_id: theirId }),
@@ -364,7 +351,6 @@ export default function FarmGame() {
           flash(`🌾 Harvested ${crop}!`);
         } else {
           const r = await res.json();
-          console.error(`[${type}] API error:`, r.error);
           flash(`❌ ${r.error}`);
         }
       }
@@ -373,12 +359,9 @@ export default function FarmGame() {
       // Accept both names: USE_FERTILIZER (legacy) and FERTILIZE_PLANT (current Godot).
       if (type === 'USE_FERTILIZER' || type === 'FERTILIZE_PLANT') {
         const pot_id = normalizePotId(payload.pot_id);
-        console.log(`[${type}] pot_id="${pot_id}"`);
 
-        // Pre-flight guard — bail before touching the API if the user is out of fertilizer.
         const currentFert = myUserRef.current?.fertilizer ?? 0;
         if (currentFert < 1) {
-          console.warn(`[${type}] No fertilizer left (count=${currentFert}) — aborting.`);
           flash('❌ No fertilizer left!');
           return;
         }
@@ -411,7 +394,6 @@ export default function FarmGame() {
           flash('🌿 Fertilized! +1 stage growth');
         } else {
           const r = await res.json();
-          console.error(`[${type}] API error:`, r.error);
           flash(`❌ ${r.error}`);
         }
       }
@@ -458,23 +440,13 @@ export default function FarmGame() {
     const attemptLoad = () => {
       const godot = iframeRef.current?.contentWindow;
       if (godot && godot.loadFarmState) {
-        const parsed = JSON.parse(jsonString);
-        console.group('🌱 SENDING TO GODOT');
-        (parsed.pots ?? []).forEach(p =>
-          console.log(`  pot=${p.pot_id} seed=${p.seed} elapsed_time=${p.elapsed_time}s (${Math.round(p.elapsed_time/60)}min)`)
-        );
-        console.groupEnd();
         godot.loadFarmState(jsonString);
-        return; // success — stop retrying
-      }
-
-      attempts += 1;
-      if (attempts >= MAX_ATTEMPTS) {
-        console.error('[Bridge] loadFarmState() still not available after 2s — giving up');
         return;
       }
 
-      console.warn(`[Bridge] loadFarmState not ready yet, retrying… (${attempts}/${MAX_ATTEMPTS})`);
+      attempts += 1;
+      if (attempts >= MAX_ATTEMPTS) return;
+
       setTimeout(attemptLoad, 100);
     };
 
@@ -521,15 +493,6 @@ export default function FarmGame() {
       godotWindow.setGodotEquippedItem(next?.type ?? null, next?.name ?? null);
     }
     flash(next ? `🖱 Click the farm to place ${godotName}` : 'Unequipped');
-  };
-
-  // ── Dev shortcut ─────────────────────────────────────────────────────────
-  const devAddResources = async () => {
-    const res = await fetch('/api/dev/add-resources', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: currentUser.id, coins: 20, fertilizer: 10 }),
-    });
-    if (res.ok) { const { user: u } = await res.json(); setMyUser(u); flash('⚗ +20🪙 +10🌿'); }
   };
 
   // ── Status flash ─────────────────────────────────────────────────────────
@@ -659,9 +622,6 @@ export default function FarmGame() {
           <PixelImg src="/icons/fertilizer.png" alt="fertilizer" size={22} />
           <span className={popFert ? 'fg-stat--pop' : ''}>{myUser?.fertilizer ?? 0}</span>
         </span>
-        {isOwner && (
-          <button onClick={devAddResources} style={{ ...topBtnStyle, background: '#1a3a1a', color: '#86efac', borderColor: '#3a7d44' }} title="Dev: add resources">⚗ Dev</button>
-        )}
       </div>
     </div>
   );

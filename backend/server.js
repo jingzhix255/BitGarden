@@ -50,11 +50,12 @@ if (hasOldEconomy || hasPotIdInteger) {
 db.exec(`
   -- ── Users ──────────────────────────────────────────────────────────────
   CREATE TABLE IF NOT EXISTS users (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    username   TEXT    NOT NULL UNIQUE,
-    coins      INTEGER NOT NULL DEFAULT 0,
-    fertilizer INTEGER NOT NULL DEFAULT 0,
-    farm_state TEXT    NOT NULL DEFAULT '{"pots":[],"animals":[]}'
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT    NOT NULL UNIQUE,
+    coins         INTEGER NOT NULL DEFAULT 0,
+    fertilizer    INTEGER NOT NULL DEFAULT 0,
+    farm_state    TEXT    NOT NULL DEFAULT '{"pots":[],"animals":[]}',
+    profile_image TEXT
   );
 
   -- ── Farm items (plants + animals placed in the Godot scene) ────────────
@@ -99,6 +100,14 @@ const hasFarmStateCol = db.prepare(
 if (!hasFarmStateCol) {
   db.exec(`ALTER TABLE users ADD COLUMN farm_state TEXT NOT NULL DEFAULT '{"pots":[],"animals":[]}'`);
   console.log('✅  Added farm_state column to users table (non-destructive migration).\n');
+}
+
+// v6: non-destructive — add profile_image column to existing users tables.
+const hasProfileImageCol = db.prepare(
+  "SELECT 1 FROM pragma_table_info('users') WHERE name='profile_image'"
+).get();
+if (!hasProfileImageCol) {
+  db.exec('ALTER TABLE users ADD COLUMN profile_image TEXT');
 }
 
 // v5: Normalise placed_at to milliseconds (raw SQL only — syncFarmState called after helpers).
@@ -160,15 +169,38 @@ function syncFarmState(userId) {
 // ─── Routes ────────────────────────────────────────────────────────────────
 
 // POST /api/login
+// Body: { username, profile_image? }
+// New users receive 5 starting coins, 5 fertilizer, and have their profile_image saved.
+// The entire registration is wrapped in a transaction so partial writes never persist.
 app.post('/api/login', (req, res) => {
-  const username = (req.body.username ?? '').trim();
+  const username      = (req.body.username      ?? '').trim();
+  const profile_image = (req.body.profile_image ?? '').trim() || null;
+
   if (!username) return res.status(400).json({ error: 'username is required.' });
 
   let user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+
   if (!user) {
-    const r = db.prepare('INSERT INTO users (username) VALUES (?)').run(username);
-    user     = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(r.lastInsertRowid));
+    // New registration — wrap in a transaction so the user row and starting
+    // resources are either both committed or both rolled back.
+    try {
+      db.exec('BEGIN');
+      const r = db.prepare(
+        'INSERT INTO users (username, coins, fertilizer, profile_image) VALUES (?, 5, 5, ?)'
+      ).run(username, profile_image);
+      const newId = Number(r.lastInsertRowid);
+      db.exec('COMMIT');
+      user = db.prepare('SELECT * FROM users WHERE id = ?').get(newId);
+    } catch (err) {
+      db.exec('ROLLBACK');
+      return res.status(500).json({ error: 'Registration failed.' });
+    }
+  } else if (profile_image && !user.profile_image) {
+    // Returning user — backfill profile_image if it was never saved.
+    db.prepare('UPDATE users SET profile_image = ? WHERE id = ?').run(profile_image, user.id);
+    user = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   }
+
   res.json(user);
 });
 
@@ -246,8 +278,6 @@ app.post('/api/shop/buy', (req, res) => {
   const { user_id, item_name } = req.body;
   const userId = Number(user_id);
 
-  console.log(`[shop/buy] user=${userId} item="${item_name}"`);
-
   if (!item_name || !item_name.trim()) {
     return res.status(400).json({ error: 'item_name is required.' });
   }
@@ -264,8 +294,6 @@ app.post('/api/shop/buy', (req, res) => {
             ?? allItems.find(i => i.id.toLowerCase()   === nameLower);
   const cost = item?.cost ?? 5;  // graceful fallback for items not yet in items.json
 
-  console.log(`[shop/buy] resolved → cost=${cost}, item=${JSON.stringify(item ?? null)}`);
-
   if (user.coins < cost) {
     return res.status(400).json({ error: `Not enough coins. Need ${cost}🪙, have ${user.coins}🪙.` });
   }
@@ -276,8 +304,6 @@ app.post('/api/shop/buy', (req, res) => {
 
   db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(cost, userId);
   adjustInventory(userId, canonicalName, 1);
-
-  console.log(`[shop/buy] ✅ added "${canonicalName}" to inventory for user ${userId}`);
 
   res.json({
     user:      db.prepare('SELECT * FROM users WHERE id = ?').get(userId),
@@ -340,8 +366,6 @@ app.post('/api/farm/save', (req, res) => {
   const { user_id, farm_state: rawState } = req.body;
   const userId = Number(user_id);
 
-  console.log(`[farm/save] user=${userId} pots=${rawState?.pots?.length ?? 0} animals=${rawState?.animals?.length ?? 0}`);
-
   if (!rawState) return res.status(400).json({ error: 'farm_state is required.' });
 
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
@@ -382,7 +406,6 @@ app.post('/api/farm/save', (req, res) => {
       placedAt = existingPlacedAt[`plant:${String(pot.pot_id)}`] ?? now; // preserve or new
     }
 
-    console.log(`[farm/save] pot=${pot.pot_id} seed=${pot.seed} placed_at=${placedAt} (elapsed_time=${pot.elapsed_time ?? 'n/a'})`);
     db.prepare(
       'INSERT INTO farm_items (user_id, item_type, item_name, pot_id, placed_at) VALUES (?, ?, ?, ?, ?)'
     ).run(userId, 'plant', pot.seed, String(pot.pot_id), placedAt);
@@ -410,8 +433,6 @@ app.post('/api/farm/save', (req, res) => {
   db.prepare('UPDATE users SET farm_state = ? WHERE id = ?')
     .run(JSON.stringify({ pots, animals }), userId);
 
-  console.log(`[farm/save] ✅ saved ${pots.length} pots + ${animals.length} animals for user ${userId}`);
-
   res.json({ success: true, farm_state: { pots, animals } });
 });
 
@@ -426,8 +447,6 @@ app.post('/api/farm/plant-seed', (req, res) => {
   const rawPotId = String(pot_id ?? '').trim();
   const normPotId = /^\d+$/.test(rawPotId) ? `pot${rawPotId}` : rawPotId;
 
-  console.log(`[farm/plant-seed] user=${userId} pot="${normPotId}" (raw="${pot_id}") seed="${seed}"`);
-
   // Use != null so that numeric 0 is valid (falsy but meaningful)
   if (pot_id == null || !normPotId || !seed) {
     return res.status(400).json({ error: 'pot_id and seed are required.' });
@@ -437,10 +456,8 @@ app.post('/api/farm/plant-seed', (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found.' });
 
   const inv = getInventoryMap(userId);
-  console.log(`[farm/plant-seed] inventory snapshot:`, JSON.stringify(inv));
 
   if ((inv[seed] ?? 0) < 1) {
-    console.log(`[farm/plant-seed] ❌ "${seed}" not in inventory (keys: ${Object.keys(inv).join(', ')})`);
     return res.status(400).json({ error: `No ${seed} in inventory.` });
   }
 
@@ -456,7 +473,6 @@ app.post('/api/farm/plant-seed', (req, res) => {
   ).run(userId, 'plant', seed, normPotId, Date.now());  // ms — frontend converts to elapsed_time
   syncFarmState(userId);   // keep users.farm_state in sync
 
-  console.log(`[farm/plant-seed] ✅ planted "${seed}" in ${normPotId} for user ${userId}`);
   res.json({ success: true, inventory: getInventoryMap(userId) });
 });
 
@@ -466,18 +482,14 @@ app.post('/api/farm/place-animal', (req, res) => {
   const { user_id, animal, x, y } = req.body;
   const userId = Number(user_id);
 
-  console.log(`[farm/place-animal] user=${userId} animal="${animal}" x=${x} y=${y}`);
-
   if (!animal) return res.status(400).json({ error: 'animal is required.' });
 
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   if (!user) return res.status(404).json({ error: 'User not found.' });
 
   const inv = getInventoryMap(userId);
-  console.log(`[farm/place-animal] inventory snapshot:`, JSON.stringify(inv));
 
   if ((inv[animal] ?? 0) < 1) {
-    console.log(`[farm/place-animal] ❌ "${animal}" not in inventory (keys: ${Object.keys(inv).join(', ')})`);
     return res.status(400).json({ error: `No ${animal} in inventory.` });
   }
 
@@ -487,7 +499,6 @@ app.post('/api/farm/place-animal', (req, res) => {
   ).run(userId, 'animal', animal, Number(x ?? 0), Number(y ?? 0), Date.now());
   syncFarmState(userId);   // keep users.farm_state in sync
 
-  console.log(`[farm/place-animal] ✅ placed "${animal}" for user ${userId}`);
   res.json({ success: true, inventory: getInventoryMap(userId) });
 });
 
@@ -502,14 +513,11 @@ app.post('/api/farm/harvest', (req, res) => {
     // must match the authenticated user.  Ghost listeners / stale iframes
     // always send the wrong viewed_farm_id and are blocked here immediately.
     if (viewed_farm_id == null || String(viewed_farm_id) !== String(userId)) {
-      console.warn(`[farm/harvest] 🚫 CROP THEFT BLOCKED — user=${userId} viewed_farm=${viewed_farm_id}`);
       return res.status(403).json({ error: 'Crop theft blocked: you do not own this farm.' });
     }
     const normPotId = String(pot_id ?? '').trim().toLowerCase().startsWith('pot')
       ? String(pot_id).trim().toLowerCase()
       : `pot${pot_id}`;
-
-    console.log(`[farm/harvest] user=${userId} pot="${normPotId}" crop="${crop}"`);
 
     if (pot_id == null || !crop) {
       return res.status(400).json({ error: 'pot_id and crop are required.' });
@@ -522,14 +530,11 @@ app.post('/api/farm/harvest', (req, res) => {
     ).get(userId, 'plant', normPotId);
 
     if (!item) {
-      // Either the pot is empty or it belongs to someone else — either way, nothing to harvest.
-      console.log(`[farm/harvest] ❌ no plant in pot "${normPotId}" for user ${userId}`);
       return res.status(404).json({ error: `No plant found in pot ${normPotId}.` });
     }
 
     // Secondary type-safe guard (belt-and-suspenders after the scoped query above).
     if (String(item.user_id) !== String(userId)) {
-      console.log('Ownership check failed:', { itemUserId: item.user_id, requestUserId: userId });
       return res.status(403).json({ error: 'Forbidden: you do not own this farm.' });
     }
 
@@ -547,7 +552,6 @@ app.post('/api/farm/harvest', (req, res) => {
       return res.status(500).json({ error: txError.message || 'Transaction failed.' });
     }
 
-    console.log(`[farm/harvest] ✅ harvested "${crop}" from ${normPotId} for user ${userId}`);
     res.json({ success: true, inventory: getInventoryMap(userId) });
   } catch (error) {
     console.error('Harvest Error:', error);
@@ -568,7 +572,6 @@ app.post('/api/farm/fertilize', (req, res) => {
     // Hard server-side ownership guard — viewed_farm_id must match the
     // authenticated user. Ghost listeners / stale iframes are blocked instantly.
     if (viewed_farm_id == null || String(viewed_farm_id) !== String(userId)) {
-      console.warn(`[farm/fertilize] 🚫 BLOCKED — user=${userId} viewed_farm=${viewed_farm_id}`);
       return res.status(403).json({ error: 'Action blocked: you do not own the farm you are trying to modify.' });
     }
 
@@ -577,8 +580,6 @@ app.post('/api/farm/fertilize', (req, res) => {
     const normPotId = String(pot_id).trim().toLowerCase().startsWith('pot')
       ? String(pot_id).trim().toLowerCase()
       : `pot${pot_id}`;
-
-    console.log(`[farm/fertilize] user=${userId} pot="${normPotId}"`);
 
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
     if (!user) return res.status(404).json({ error: 'User not found.' });
@@ -590,21 +591,17 @@ app.post('/api/farm/fertilize', (req, res) => {
     ).get(userId, 'plant', normPotId);
 
     if (!item) {
-      console.log(`[farm/fertilize] ❌ no plant in pot "${normPotId}" for user ${userId}`);
       return res.status(404).json({ error: `No plant found in pot ${normPotId}.` });
     }
 
     // Belt-and-suspenders type-safe ownership guard after the scoped query.
     if (String(item.user_id) !== String(userId)) {
-      console.warn('Fertilize ownership check failed:', { itemUserId: item.user_id, requestUserId: userId });
       return res.status(403).json({ error: 'Action blocked: you do not own the farm you are trying to modify.' });
     }
 
     // placed_at is stored as INTEGER milliseconds — skipMs must be the same type.
     // Math.floor + Number() guards against any string/bigint coercion from config.
     const skipMs = Math.floor(Number(SHOP_CONFIG.fertilizer_skip_seconds ?? 1800) * 1000);
-
-    console.log(`[farm/fertilize] placed_at BEFORE=${item.placed_at}  skipMs=${skipMs}  expected AFTER=${item.placed_at - skipMs}`);
 
     // Manual transaction — node:sqlite does not support db.transaction().
     try {
@@ -635,7 +632,6 @@ app.post('/api/farm/fertilize', (req, res) => {
     const updatedItem = db.prepare('SELECT * FROM farm_items WHERE id = ?').get(item.id);
     const updatedUser = db.prepare('SELECT * FROM users       WHERE id = ?').get(userId);
 
-    console.log(`[farm/fertilize] ✅ fertilized pot "${normPotId}" for user ${userId} — new placed_at=${updatedItem.placed_at}`);
     res.json({
       success:       true,
       user:          updatedUser,
@@ -704,6 +700,41 @@ app.post('/api/fertilize', (req, res) => {
 // GET /api/config  — shop config + layout for the frontend
 app.get('/api/config', (_req, res) => {
   res.json({ shop: SHOP_CONFIG, layout: LAYOUT_CONFIG });
+});
+
+// GET /api/neighborhood/board  — community stats for the Announcement Board
+// Derives three leaderboard-style stats from existing tables with no new schema.
+app.get('/api/neighborhood/board', (_req, res) => {
+  try {
+    // Stat 1 — Farmer of the Day: user with the most active items in their farm
+    const farmer = db.prepare(`
+      SELECT u.id, u.username, COUNT(fi.id) AS item_count
+      FROM farm_items fi
+      JOIN users u ON u.id = fi.user_id
+      GROUP BY fi.user_id
+      ORDER BY item_count DESC
+      LIMIT 1
+    `).get();
+
+    // Stat 2 — Richest Farmer: user with the highest coin balance
+    const tycoon = db.prepare(
+      'SELECT id, username, coins FROM users ORDER BY coins DESC LIMIT 1'
+    ).get();
+
+    // Stat 3 — Newest Neighbor: most recently registered account (highest auto-increment id)
+    const newest = db.prepare(
+      'SELECT id, username FROM users ORDER BY id DESC LIMIT 1'
+    ).get();
+
+    res.json({
+      farmer: farmer ? { id: farmer.id, username: farmer.username, count: farmer.item_count } : null,
+      tycoon: tycoon ? { id: tycoon.id, username: tycoon.username, coins: tycoon.coins      } : null,
+      newest: newest ? { id: newest.id, username: newest.username                            } : null,
+    });
+  } catch (err) {
+    console.error('[neighborhood/board]', err);
+    res.status(500).json({ error: 'Could not load community board.' });
+  }
 });
 
 // ─── Dev helpers ────────────────────────────────────────────────────────────

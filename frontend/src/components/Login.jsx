@@ -35,10 +35,11 @@ export default function Login() {
     setLoading(true);
     setError('');
     try {
+      const profile_image = `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(name)}`;
       const res  = await fetch('/api/login', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ username: name }),
+        body:    JSON.stringify({ username: name, profile_image }),
       });
       const data = await res.json();
       if (!res.ok) {

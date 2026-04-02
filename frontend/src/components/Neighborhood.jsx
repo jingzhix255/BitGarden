@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '../App.jsx';
+import AnnouncementBoard from './AnnouncementBoard.jsx';
 
 // ─── Weather System ────────────────────────────────────────────────────────────
 
@@ -303,6 +304,7 @@ export default function Neighborhood() {
 
         {/* ── Body ── */}
         <main className="nb-main">
+          <AnnouncementBoard />
           <div className="nb-search-wrap">
             <input
               className="nb-search"

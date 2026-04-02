@@ -1939,3 +1939,254 @@ body {
     transition-duration:      0.01ms !important;
   }
 }
+
+/* ════════════════════════════════════════════════════════════════
+   ANNOUNCEMENT BOARD  — bold redesign  (.ab-)
+════════════════════════════════════════════════════════════════ */
+
+/* ── Corkboard backdrop ── */
+.ab-board {
+  position:      relative;
+  margin-bottom: 2.5rem;
+  /* Subtle vertical wood-grain lines over a deep dark background */
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.006) 0, rgba(255,255,255,0.006) 1px,
+      transparent 1px, transparent 64px
+    ),
+    #07090606;
+  border:        2px solid #1c2c18;
+  border-top:    3px solid #243820;
+  border-radius: 3px;
+  box-shadow:
+    0 10px 50px rgba(0,0,0,0.75),
+    inset 0 1px 0 rgba(255,255,255,0.03),
+    inset 0 -2px 0 rgba(0,0,0,0.5);
+  animation: nb-title-in 0.5s 0.05s cubic-bezier(0.25, 1, 0.5, 1) both;
+  overflow: visible;
+}
+
+/* ── Wooden sign header ── */
+.ab-sign {
+  font-family:    var(--font-pixel);
+  font-size:      clamp(1rem, 2.5vw, 1.35rem);
+  color:          #5a8050;
+  letter-spacing: 0.28em;
+  text-align:     center;
+  padding:        1rem 1.5rem 1.1rem;
+  border-bottom:  2px solid #111a0e;
+  text-shadow:    0 0 28px rgba(80,170,60,0.10);
+}
+
+/* ── Three-card grid ── */
+.ab-cards {
+  display:               grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap:                   1rem;
+  padding:               1.6rem 1.25rem 1.75rem;
+}
+
+/* ── Base card — paper note pinned to the board ── */
+.ab-card {
+  position:   relative;
+  padding:    2.2rem 1rem 1.3rem;
+  border-radius: 2px;
+  text-align: center;
+  cursor:     default;
+  transform:  rotate(var(--tilt));
+  transition:
+    transform  0.3s  cubic-bezier(0.25, 1, 0.5, 1),
+    box-shadow 0.3s  cubic-bezier(0.25, 1, 0.5, 1);
+  animation:  ab-card-in 0.55s cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+.ab-card--link          { cursor: pointer; }
+.ab-card--link:hover    {
+  transform: rotate(0deg) translateY(-5px) scale(1.04);
+  z-index:   3;
+}
+.ab-card--link:active   { transform: rotate(0deg) translateY(-2px) scale(1.01); }
+
+/* ─ Farmer ─ */
+.ab-card--farmer {
+  --tilt:       -2deg;
+  --accent:     #86efac;
+  --accent-mid: #3a7050;
+  --accent-dim: #1e3a28;
+  --pin-top:    #a7f3c7;
+  --pin-bot:    #4ade80;
+  --glow:       rgba(134,239,172,0.18);
+  background:   #060e08;
+  border:       1px solid #182e20;
+  box-shadow:   0 4px 22px rgba(0,0,0,0.65),
+                inset 0 1px 0 rgba(134,239,172,0.04);
+}
+.ab-card--farmer:hover {
+  box-shadow:   0 18px 50px rgba(0,0,0,0.85),
+                0 0 0 1px rgba(134,239,172,0.18),
+                0 0 40px rgba(134,239,172,0.06);
+}
+
+/* ─ Tycoon ─ */
+.ab-card--tycoon {
+  --tilt:       1.5deg;
+  --accent:     #fbbf24;
+  --accent-mid: #92660a;
+  --accent-dim: #3d2806;
+  --pin-top:    #fde68a;
+  --pin-bot:    #f59e0b;
+  --glow:       rgba(251,191,36,0.18);
+  background:   #0d0a02;
+  border:       1px solid #2c2006;
+  box-shadow:   0 4px 22px rgba(0,0,0,0.65),
+                inset 0 1px 0 rgba(251,191,36,0.04);
+}
+.ab-card--tycoon:hover {
+  box-shadow:   0 18px 50px rgba(0,0,0,0.85),
+                0 0 0 1px rgba(251,191,36,0.2),
+                0 0 40px rgba(251,191,36,0.07);
+}
+
+/* ─ Newest ─ */
+.ab-card--newest {
+  --tilt:       -0.8deg;
+  --accent:     #67e8f9;
+  --accent-mid: #1a7a90;
+  --accent-dim: #0a2c38;
+  --pin-top:    #a5f3fc;
+  --pin-bot:    #22d3ee;
+  --glow:       rgba(103,232,249,0.18);
+  background:   #03090d;
+  border:       1px solid #0c2835;
+  box-shadow:   0 4px 22px rgba(0,0,0,0.65),
+                inset 0 1px 0 rgba(103,232,249,0.04);
+}
+.ab-card--newest:hover {
+  box-shadow:   0 18px 50px rgba(0,0,0,0.85),
+                0 0 0 1px rgba(103,232,249,0.18),
+                0 0 40px rgba(103,232,249,0.07);
+}
+
+/* ── Push pin ── */
+.ab-card__pin {
+  position:      absolute;
+  top:           -7px;
+  left:          50%;
+  transform:     translateX(-50%);
+  width:         14px;
+  height:        14px;
+  border-radius: 50%;
+  background:    radial-gradient(circle at 35% 28%, var(--pin-top), var(--pin-bot));
+  box-shadow:    0 2px 6px rgba(0,0,0,0.7), 0 0 10px var(--glow);
+  animation:     ab-pin-pulse 3.5s ease-in-out infinite;
+}
+@keyframes ab-pin-pulse {
+  0%, 100% { box-shadow: 0 2px 6px rgba(0,0,0,0.7), 0 0 10px var(--glow); }
+  50%       { box-shadow: 0 2px 6px rgba(0,0,0,0.7), 0 0 20px var(--glow); }
+}
+
+/* ── Icon ── */
+.ab-card__icon {
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  height:          2.6rem;
+  font-size:       2rem;
+  line-height:     1;
+  margin-bottom:   0.5rem;
+}
+
+/* ── Category label ── */
+.ab-card__label {
+  font-family:    var(--font-pixel);
+  font-size:      1.05rem;
+  color:          var(--accent-mid);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom:  0.4rem;
+  line-height:    1.2;
+}
+
+/* ── Username — the hero moment ── */
+.ab-card__name {
+  font-family:    var(--font-pixel);
+  font-size:      clamp(1.55rem, 3vw, 2rem);
+  color:          var(--accent);
+  line-height:    1.1;
+  margin-bottom:  0.4rem;
+  text-shadow:    0 0 24px var(--glow);
+  word-break:     break-all;
+  animation:      ab-name-in 0.38s cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+
+/* ── Stat detail (count, coins) ── */
+.ab-card__detail {
+  font-family:    var(--font-pixel);
+  font-size:      0.9rem;
+  color:          var(--accent-mid);
+  letter-spacing: 0.05em;
+  line-height:    1;
+}
+
+/* ── Empty state ── */
+.ab-card__empty {
+  font-family:    var(--font-pixel);
+  font-size:      0.95rem;
+  color:          var(--accent-dim);
+  opacity:        0.55;
+  font-style:     italic;
+  margin-top:     0.6rem;
+}
+
+/* ── Error state ── */
+.ab-error {
+  font-family:    var(--font-pixel);
+  font-size:      1.1rem;
+  color:          #2a4224;
+  letter-spacing: 2px;
+  text-align:     center;
+  padding:        1.5rem;
+}
+
+/* ── Loading skeleton ── */
+.ab-skeleton {
+  display:               grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap:                   1rem;
+  padding:               1.6rem 1.25rem 1.75rem;
+}
+.ab-skeleton__card {
+  height:     130px;
+  border:     1px solid #141e10;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #0a0e0a 25%, #121a10 50%, #0a0e0a 75%);
+  background-size: 200% 100%;
+  animation:  ab-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes ab-shimmer {
+  0%   { background-position:  200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Entrance keyframes ── */
+@keyframes ab-card-in {
+  from {
+    opacity:   0;
+    transform: rotate(calc(var(--tilt, 0deg) * 2.5)) translateY(24px);
+  }
+  to {
+    opacity:   1;
+    transform: rotate(var(--tilt, 0deg)) translateY(0);
+  }
+}
+@keyframes ab-name-in {
+  from { opacity: 0; transform: scale(0.82); }
+  to   { opacity: 1; transform: scale(1);    }
+}
+
+/* ── Responsive: stack on narrow screens ── */
+@media (max-width: 620px) {
+  .ab-cards,
+  .ab-skeleton       { grid-template-columns: 1fr; }
+  .ab-card           { --tilt: 0deg; }
+}
