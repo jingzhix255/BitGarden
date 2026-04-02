@@ -14,9 +14,13 @@ frontend/dist/
 
 # OS / editor
 .DS_Store
+*.local
+
+# Environment secrets — never commit real .env files
 .env
 .env.local
-*.local
+.env.production
+# .env.example is intentionally NOT ignored (it's a safe template)
 
 # Logs
 *.log

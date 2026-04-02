@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const express = require('express');
 const cors    = require('cors');
 const path    = require('path');
@@ -5,7 +7,15 @@ const fs      = require('fs');
 const { DatabaseSync } = require('node:sqlite');
 
 const app = express();
-app.use(cors());
+
+// CORS: restrict to CORS_ORIGIN in production; allow all in development.
+const corsOrigin = process.env.CORS_ORIGIN;
+app.use(cors(
+  corsOrigin
+    ? { origin: corsOrigin, optionsSuccessStatus: 200 }
+    : undefined   // undefined → wildcard (safe for local dev)
+));
+
 app.use(express.json());
 
 // ─── Load config files ─────────────────────────────────────────────────────
@@ -28,7 +38,7 @@ const LAYOUT_CONFIG = JSON.parse(
 );
 
 // ─── Database ──────────────────────────────────────────────────────────────
-const DB_PATH = path.join(__dirname, 'bitgarden.db');
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'bitgarden.db');
 
 // Auto-migrate: wipe DB if either old schema is detected.
 //  v1 → v2: added coins/fertilizer, removed water_balance
@@ -737,22 +747,24 @@ app.get('/api/neighborhood/board', (_req, res) => {
   }
 });
 
-// ─── Dev helpers ────────────────────────────────────────────────────────────
+// ─── Dev helpers (disabled in production) ───────────────────────────────────
 // POST /api/dev/add-resources  — quickly add coins + fertilizer for testing
-app.post('/api/dev/add-resources', (req, res) => {
-  const { user_id, coins = 20, fertilizer = 10 } = req.body;
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(user_id));
-  if (!user) return res.status(404).json({ error: 'User not found.' });
+if (process.env.NODE_ENV !== 'production') {
+  app.post('/api/dev/add-resources', (req, res) => {
+    const { user_id, coins = 20, fertilizer = 10 } = req.body;
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(user_id));
+    if (!user) return res.status(404).json({ error: 'User not found.' });
 
-  db.prepare(
-    'UPDATE users SET coins = coins + ?, fertilizer = fertilizer + ? WHERE id = ?'
-  ).run(Number(coins), Number(fertilizer), Number(user_id));
+    db.prepare(
+      'UPDATE users SET coins = coins + ?, fertilizer = fertilizer + ? WHERE id = ?'
+    ).run(Number(coins), Number(fertilizer), Number(user_id));
 
-  res.json({ user: db.prepare('SELECT * FROM users WHERE id = ?').get(Number(user_id)) });
-});
+    res.json({ user: db.prepare('SELECT * FROM users WHERE id = ?').get(Number(user_id)) });
+  });
+}
 
 // ─── Start ─────────────────────────────────────────────────────────────────
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`\n🌱 BitGarden backend running → http://localhost:${PORT}\n`);
   console.log(`  Economy : Kudos sender → +1 🌿  |  Kudos receiver → +1 🪙`);
