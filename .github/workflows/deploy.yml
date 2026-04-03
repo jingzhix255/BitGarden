@@ -1,0 +1,9 @@
+name: Deploy to EasyDeploy
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'easydeploy.yaml'
+jobs:
+  deploy:
+    uses: hiyainc-labs/easydeploy/.github/workflows/deploy.yml@main

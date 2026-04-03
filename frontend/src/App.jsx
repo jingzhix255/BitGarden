@@ -1,80 +1,103 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import Login        from './components/Login.jsx';
 import Neighborhood from './components/Neighborhood.jsx';
 import FarmGame     from './components/FarmGame.jsx';
 
-// ─── Session context ────────────────────────────────────────────────────────
+// ─── Session context ─────────────────────────────────────────────────────────
 export const SessionContext = createContext(null);
 export const useSession = () => useContext(SessionContext);
 
-const SESSION_KEY = 'bitgarden_user';
+function LoadingScreen() {
+  return (
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: '#040904',
+      fontFamily: "'VT323', monospace",
+      color: '#3a6030',
+      fontSize: '1.6rem',
+      letterSpacing: '4px',
+    }}>
+      🌱 Loading…
+    </div>
+  );
+}
+
+function ErrorScreen({ message }) {
+  return (
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: '#040904',
+      fontFamily: "'VT323', monospace",
+      color: '#c04040',
+      fontSize: '1.4rem',
+      letterSpacing: '2px',
+      textAlign: 'center',
+      padding: '2rem',
+      gap: '0.75rem',
+    }}>
+      <span>Could not connect to authentication service.</span>
+      <span style={{ fontSize: '1rem', color: '#6a3030' }}>{message}</span>
+    </div>
+  );
+}
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(SESSION_KEY)); }
-    catch { return null; }
-  });
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loading,     setLoading]     = useState(true);
+  const [authError,   setAuthError]   = useState(null);
 
-  const login = (user) => {
-    setCurrentUser(user);
-    localStorage.setItem(SESSION_KEY, JSON.stringify(user));
-  };
+  // Resolve the current user from the Okta proxy on every fresh page load.
+  // In dev, the backend automatically falls back to "LocalDevUser".
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(r => {
+        if (!r.ok) throw new Error(`Auth failed: ${r.status}`);
+        return r.json();
+      })
+      .then(user  => { setCurrentUser(user); setLoading(false); })
+      .catch(err  => { setAuthError(err.message); setLoading(false); });
+  }, []);
 
-  const logout = () => {
-    setCurrentUser(null);
-    localStorage.removeItem(SESSION_KEY);
-  };
-
-  // Keep session data fresh when the user returns from a garden visit
+  // Keep resource counts (coins, fertilizer) fresh after farm interactions.
   const refreshUser = async () => {
     if (!currentUser) return;
     try {
       const res = await fetch(`/api/garden/${currentUser.id}`);
       if (res.ok) {
         const { user } = await res.json();
-        const updated = { ...currentUser, ...user };
-        setCurrentUser(updated);
-        localStorage.setItem(SESSION_KEY, JSON.stringify(updated));
+        setCurrentUser(prev => ({ ...prev, ...user }));
       }
     } catch {}
   };
 
+  // Okta owns authentication — logout redirects to the proxy's logout endpoint.
+  const logout = () => {
+    setCurrentUser(null);
+    window.location.href = '/logout';
+  };
+
+  if (loading)   return <LoadingScreen />;
+  if (authError) return <ErrorScreen message={authError} />;
+
   return (
-    <SessionContext.Provider value={{ currentUser, login, logout, refreshUser, setCurrentUser }}>
+    <SessionContext.Provider value={{ currentUser, logout, refreshUser, setCurrentUser }}>
       <Routes>
-        {/* Default: logged-in users land directly on their own farm */}
-        <Route path="/" element={
-          currentUser
-            ? <Navigate to="/farm" replace />
-            : <Login />
-        } />
-
-        {/* Primary view: owner's own farm */}
-        <Route path="/farm" element={
-          currentUser
-            ? <FarmGame />
-            : <Navigate to="/" replace />
-        } />
-
-        {/* Secondary: neighbor list */}
-        <Route path="/neighbors" element={
-          currentUser
-            ? <Neighborhood />
-            : <Navigate to="/" replace />
-        } />
-
-        {/* Visiting another player's garden — Godot in visitor mode */}
-        <Route path="/garden/:userId" element={
-          currentUser
-            ? <FarmGame />
-            : <Navigate to="/" replace />
-        } />
-
-        {/* Legacy alias so any old /neighborhood links still work */}
-        <Route path="/neighborhood" element={<Navigate to="/neighbors" replace />} />
-
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* Root always goes to the user's own farm */}
+        <Route path="/"               element={<Navigate to="/farm" replace />} />
+        <Route path="/farm"           element={<FarmGame />} />
+        <Route path="/neighbors"      element={<Neighborhood />} />
+        <Route path="/garden/:userId" element={<FarmGame />} />
+        {/* Legacy alias */}
+        <Route path="/neighborhood"   element={<Navigate to="/neighbors" replace />} />
+        <Route path="*"               element={<Navigate to="/farm" replace />} />
       </Routes>
     </SessionContext.Provider>
   );

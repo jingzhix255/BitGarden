@@ -1077,11 +1077,11 @@ function ItemIcon({ name, size = 24 }) {
 // ─── Shop card — matches Figma design ─────────────────────────────────────────
 function ShopCard({ item, coins, onBuy }) {
   const canAfford = coins >= item.cost;
+  const deficit   = item.cost - coins;
   return (
     <div
       className={`fg-shop-card${canAfford ? '' : ' fg-shop-card--unaffordable'}`}
       onClick={() => canAfford && onBuy(item)}
-      title={canAfford ? `Buy ${item.name}` : `Need ${item.cost - coins} more coins`}
     >
       <ItemIcon name={item.name} size={40} />
       <span style={{ fontSize: '1.25rem', color: '#b9e6b1', textAlign: 'center', lineHeight: 1 }}>
@@ -1089,8 +1089,15 @@ function ShopCard({ item, coins, onBuy }) {
       </span>
       <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         <PixelImg src="/icons/money.png" alt="coins" size={18} />
-        <span style={{ fontSize: '1.3rem', color: '#ee6a0e' }}>{item.cost}</span>
+        <span style={{ fontSize: '1.3rem', color: canAfford ? '#ee6a0e' : '#c04040' }}>
+          {item.cost}
+        </span>
       </span>
+      {!canAfford && (
+        <span style={{ fontSize: '1rem', color: '#7a3535', fontFamily: VT323, lineHeight: 1 }}>
+          need {deficit} more
+        </span>
+      )}
     </div>
   );
 }

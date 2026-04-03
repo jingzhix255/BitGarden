@@ -62,8 +62,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     username      TEXT    NOT NULL UNIQUE,
-    coins         INTEGER NOT NULL DEFAULT 0,
-    fertilizer    INTEGER NOT NULL DEFAULT 0,
+    coins         INTEGER NOT NULL DEFAULT 5,
+    fertilizer    INTEGER NOT NULL DEFAULT 5,
     farm_state    TEXT    NOT NULL DEFAULT '{"pots":[],"animals":[]}',
     profile_image TEXT
   );
@@ -178,40 +178,50 @@ function syncFarmState(userId) {
 
 // ─── Routes ────────────────────────────────────────────────────────────────
 
-// POST /api/login
-// Body: { username, profile_image? }
-// New users receive 5 starting coins, 5 fertilizer, and have their profile_image saved.
-// The entire registration is wrapped in a transaction so partial writes never persist.
-app.post('/api/login', (req, res) => {
-  const username      = (req.body.username      ?? '').trim();
-  const profile_image = (req.body.profile_image ?? '').trim() || null;
+// GET /api/auth/me
+// Resolves the authenticated user via the Okta Identity Proxy header.
+// In development (no proxy header present) falls back to "LocalDevUser".
+// First-time visitors are auto-provisioned with starting resources.
+app.get('/api/auth/me', (req, res) => {
+  try {
+    // Okta Identity Proxy injects the authenticated username via one of these headers.
+    const rawUsername =
+      req.headers['x-forwarded-user'] ||
+      req.headers['x-forwarded-preferred-username'] ||
+      (process.env.NODE_ENV !== 'production' ? 'LocalDevUser' : null);
 
-  if (!username) return res.status(400).json({ error: 'username is required.' });
-
-  let user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-
-  if (!user) {
-    // New registration — wrap in a transaction so the user row and starting
-    // resources are either both committed or both rolled back.
-    try {
-      db.exec('BEGIN');
-      const r = db.prepare(
-        'INSERT INTO users (username, coins, fertilizer, profile_image) VALUES (?, 5, 5, ?)'
-      ).run(username, profile_image);
-      const newId = Number(r.lastInsertRowid);
-      db.exec('COMMIT');
-      user = db.prepare('SELECT * FROM users WHERE id = ?').get(newId);
-    } catch (err) {
-      db.exec('ROLLBACK');
-      return res.status(500).json({ error: 'Registration failed.' });
+    if (!rawUsername) {
+      return res.status(401).json({ error: 'Unauthenticated: no identity header present.' });
     }
-  } else if (profile_image && !user.profile_image) {
-    // Returning user — backfill profile_image if it was never saved.
-    db.prepare('UPDATE users SET profile_image = ? WHERE id = ?').run(profile_image, user.id);
-    user = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
-  }
 
-  res.json(user);
+    const username = rawUsername.trim();
+    let user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+
+    if (!user) {
+      // First visit — auto-provision the account in a single transaction.
+      // Profile image is derived from the username so it never needs to be
+      // supplied by a form (Okta is the source of truth for identity).
+      const profileImage =
+        `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(username)}`;
+      try {
+        db.exec('BEGIN');
+        const r = db.prepare(
+          'INSERT INTO users (username, coins, fertilizer, profile_image) VALUES (?, 5, 5, ?)'
+        ).run(username, profileImage);
+        const newId = Number(r.lastInsertRowid);
+        db.exec('COMMIT');
+        user = db.prepare('SELECT * FROM users WHERE id = ?').get(newId);
+      } catch (txErr) {
+        db.exec('ROLLBACK');
+        return res.status(500).json({ error: 'Account provisioning failed.' });
+      }
+    }
+
+    res.json(user);
+  } catch (err) {
+    console.error('[auth/me]', err);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
 });
 
 // GET /api/users
@@ -765,7 +775,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 // ─── Start ─────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🌱 BitGarden backend running → http://localhost:${PORT}\n`);
   console.log(`  Economy : Kudos sender → +1 🌿  |  Kudos receiver → +1 🪙`);
   console.log(`  Shop    : ${SHOP_CONFIG.seeds.length} seeds, ${SHOP_CONFIG.animals.length} animals`);

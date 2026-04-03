@@ -1,0 +1,17 @@
+# Change this to your actual team name (e.g., org-coretech, org-product)
+team: org-design
+
+# Custom URL for your game
+subdomain: bitgarden
+
+# Tell EasyDeploy what we are using
+runtime: NODEJS_18
+
+# Install dependencies and build the React frontend
+build_command: npm install && npm run build
+
+# Start the Node backend
+start_command: npm start
+
+# Allow EasyDeploy to dynamically assign the port
+port: 8080
