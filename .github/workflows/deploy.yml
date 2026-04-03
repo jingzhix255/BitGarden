@@ -9,5 +9,6 @@ jobs:
     uses: hiyainc-labs/easydeploy/.github/workflows/deploy.yml@main
     with:
       app_name: ${{ github.event.repository.name }}
+      token: ${{ github.token }}
     secrets:
       EASYDEPLOY_CHECKOUT_TOKEN: ${{ secrets.EASYDEPLOY_CHECKOUT_TOKEN }}
