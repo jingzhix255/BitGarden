@@ -18,6 +18,14 @@ app.use(cors(
 
 app.use(express.json());
 
+// Godot 4 HTML5 exports require SharedArrayBuffer for threading.
+// These headers must be set on every response for the browser to enable it.
+app.use((_req, res, next) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+  next();
+});
+
 // ─── Load config files ─────────────────────────────────────────────────────
 // Items catalog lives in backend/items.json — safe from Godot re-exports.
 // (Previously in farm_build/items.json, but Godot exports wipe that folder.)
@@ -185,10 +193,21 @@ function syncFarmState(userId) {
 app.get('/api/auth/me', (req, res) => {
   try {
     // Okta Identity Proxy injects the authenticated username via one of these headers.
+    // EasyDeploy may use 'x-forwarded-preferred-username', 'x-forwarded-user',
+    // or 'x-forwarded-email' depending on the IdP config.
     const rawUsername =
       req.headers['x-forwarded-user'] ||
       req.headers['x-forwarded-preferred-username'] ||
+      req.headers['x-forwarded-email'] ||
       (process.env.NODE_ENV !== 'production' ? 'LocalDevUser' : null);
+
+    if (process.env.NODE_ENV === 'production') {
+      console.log('[auth/me] headers:', JSON.stringify({
+        'x-forwarded-user': req.headers['x-forwarded-user'],
+        'x-forwarded-preferred-username': req.headers['x-forwarded-preferred-username'],
+        'x-forwarded-email': req.headers['x-forwarded-email'],
+      }));
+    }
 
     if (!rawUsername) {
       return res.status(401).json({ error: 'Unauthenticated: no identity header present.' });
