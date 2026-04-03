@@ -1,13 +1,25 @@
-name: Deploy to EasyDeploy
+# Place in .github/workflows/deploy.yml
+# Don't edit this file!
+
+name: Deploy
 on:
   workflow_dispatch:
+
   push:
+    branches:
+      - main
     paths:
       - 'easydeploy.yaml'
+      - 'apprunner.yaml'
+
+permissions:
+  contents: write
+  id-token: write
+
 jobs:
   deploy:
     uses: hiyainc-labs/easydeploy/.github/workflows/deploy.yml@main
     with:
       app_name: ${{ github.event.repository.name }}
     secrets:
-      EASYDEPLOY_CHECKOUT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      EASYDEPLOY_CHECKOUT_TOKEN: ${{ secrets.EASYDEPLOY_CHECKOUT_HIYABOT }}
