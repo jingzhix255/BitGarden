@@ -9,8 +9,6 @@ backend/bitgarden.db-wal
 
 # Build outputs
 frontend/dist/
-*.pck
-*.wasm
 
 # OS / editor
 .DS_Store
