@@ -4,14 +4,14 @@ team: org-design
 # Custom URL for your game
 subdomain: bitgarden
 
-# Tell EasyDeploy what we are using
-runtime: NODEJS_18
+# node:sqlite requires Node.js >= 22.5
+runtime: NODEJS_22
 
-# Install dependencies and build the React frontend
-build_command: npm install && npm run build
+# Install all deps, then build the React frontend into frontend/dist
+build_command: npm install --prefix backend && npm install --prefix frontend && npm run build --prefix frontend
 
-# Start the Node backend
-start_command: npm start
+# Start the Express backend (it serves the frontend/dist static files in production)
+start_command: node backend/server.js
 
 # Allow EasyDeploy to dynamically assign the port
 port: 8080

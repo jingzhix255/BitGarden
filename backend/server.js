@@ -773,6 +773,18 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
+// ─── Serve React frontend (production) ────────────────────────────────────
+// In development, Vite's dev server handles the frontend.
+// In production (EasyDeploy), Express serves the built static files and
+// falls back to index.html for all non-API routes so React Router works.
+const FRONTEND_DIST = path.join(__dirname, '..', 'frontend', 'dist');
+if (fs.existsSync(FRONTEND_DIST)) {
+  app.use(express.static(FRONTEND_DIST));
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
+  });
+}
+
 // ─── Start ─────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, '0.0.0.0', () => {
