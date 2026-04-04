@@ -488,7 +488,9 @@ export default function FarmGame() {
 
       const GODOT_CONFIG = {
         args: [],
-        canvasResizePolicy: 2,
+        // 0 = no auto-resize; we manage dimensions manually via ResizeObserver
+        // so the canvas stays pinned to the container, not the full viewport.
+        canvasResizePolicy: 0,
         emscriptenPoolSize: 8,
         ensureCrossOriginIsolationHeaders: false,
         executable: '/farm_build/index',
@@ -504,6 +506,8 @@ export default function FarmGame() {
       godotEngineRef.current = engine;
 
       const progressEl = document.getElementById('godot-status-progress');
+      if (progressEl) progressEl.style.display = 'block';
+
       engine.startGame({
         onProgress: (current, total) => {
           if (progressEl) {
@@ -512,6 +516,7 @@ export default function FarmGame() {
           }
         },
       }).then(() => {
+        // Hide progress bar so it no longer blocks canvas click events
         if (progressEl) progressEl.style.display = 'none';
       }).catch((err) => {
         console.error('[Godot] Failed to start:', err);
@@ -604,9 +609,10 @@ export default function FarmGame() {
             id="godot-canvas"
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'block', border: 'none' }}
           />
+          {/* Hidden by default; shown during WASM download, hidden again after game starts */}
           <progress
             id="godot-status-progress"
-            style={{ position: 'absolute', bottom: '10%', left: '25%', width: '50%' }}
+            style={{ display: 'none', position: 'absolute', bottom: '10%', left: '25%', width: '50%', pointerEvents: 'none', zIndex: 1 }}
           />
           {/* Farm title banner pinned to bottom-center over the Godot scene */}
           <div style={{ position: 'absolute', bottom: 24, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
