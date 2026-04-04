@@ -7,6 +7,7 @@ const fs      = require('fs');
 const { DatabaseSync } = require('node:sqlite');
 
 const app = express();
+app.set('trust proxy', true);
 
 // CORS: restrict to CORS_ORIGIN in production; allow all in development.
 const corsOrigin = process.env.CORS_ORIGIN;
@@ -18,12 +19,10 @@ app.use(cors(
 
 app.use(express.json());
 
-// Godot 4 HTML5 exports require SharedArrayBuffer for threading.
-// Only apply COOP/COEP to the Godot files — applying globally would break
-// cross-origin resources (DiceBear avatars, Google Fonts, etc.).
-app.use('/farm_build', (_req, res, next) => {
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+// Allow same-origin iframes (Godot game). The Okta proxy may inject
+// X-Frame-Options: DENY — override it so our own iframe can load.
+app.use((_req, res, next) => {
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   next();
 });
 
@@ -186,6 +185,15 @@ function syncFarmState(userId) {
 }
 
 // ─── Routes ────────────────────────────────────────────────────────────────
+
+// TEMP: debug endpoint to inspect Okta proxy headers — remove after confirming
+app.get('/api/debug/headers', (req, res) => {
+  const forwarded = {};
+  for (const [k, v] of Object.entries(req.headers)) {
+    if (k.startsWith('x-') || k === 'host' || k === 'remote-user') forwarded[k] = v;
+  }
+  res.json({ hostname: req.hostname, ip: req.ip, headers: forwarded });
+});
 
 // GET /api/auth/me
 // Resolves the authenticated user via the Okta Identity Proxy header.
