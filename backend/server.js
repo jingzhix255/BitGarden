@@ -194,21 +194,14 @@ function syncFarmState(userId) {
 app.get('/api/auth/me', (req, res) => {
   try {
     // Okta Identity Proxy injects the authenticated username via one of these headers.
-    // EasyDeploy may use 'x-forwarded-preferred-username', 'x-forwarded-user',
-    // or 'x-forwarded-email' depending on the IdP config.
-    const rawUsername =
+    const oktaUser =
       req.headers['x-forwarded-user'] ||
       req.headers['x-forwarded-preferred-username'] ||
-      req.headers['x-forwarded-email'] ||
-      (process.env.NODE_ENV !== 'production' ? 'LocalDevUser' : null);
+      req.headers['x-forwarded-email'];
 
-    if (process.env.NODE_ENV === 'production') {
-      console.log('[auth/me] headers:', JSON.stringify({
-        'x-forwarded-user': req.headers['x-forwarded-user'],
-        'x-forwarded-preferred-username': req.headers['x-forwarded-preferred-username'],
-        'x-forwarded-email': req.headers['x-forwarded-email'],
-      }));
-    }
+    // Only fall back to a dev user when running locally (no proxy headers present).
+    const isLocal = req.hostname === 'localhost' || req.hostname === '127.0.0.1';
+    const rawUsername = oktaUser || (isLocal ? 'LocalDevUser' : null);
 
     if (!rawUsername) {
       return res.status(401).json({ error: 'Unauthenticated: no identity header present.' });
@@ -806,7 +799,7 @@ if (fs.existsSync(FRONTEND_DIST)) {
 }
 
 // ─── Start ─────────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🌱 BitGarden backend running → http://localhost:${PORT}\n`);
   console.log(`  Economy : Kudos sender → +1 🌿  |  Kudos receiver → +1 🪙`);
