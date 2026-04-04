@@ -19,8 +19,9 @@ app.use(cors(
 app.use(express.json());
 
 // Godot 4 HTML5 exports require SharedArrayBuffer for threading.
-// These headers must be set on every response for the browser to enable it.
-app.use((_req, res, next) => {
+// Only apply COOP/COEP to the Godot files — applying globally would break
+// cross-origin resources (DiceBear avatars, Google Fonts, etc.).
+app.use('/farm_build', (_req, res, next) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
   next();
