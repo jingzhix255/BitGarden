@@ -186,30 +186,40 @@ function syncFarmState(userId) {
 
 // ─── Routes ────────────────────────────────────────────────────────────────
 
-// TEMP: debug endpoint to inspect Okta proxy headers — remove after confirming
-app.get('/api/debug/headers', (req, res) => {
-  const forwarded = {};
-  for (const [k, v] of Object.entries(req.headers)) {
-    if (k.startsWith('x-') || k === 'host' || k === 'remote-user') forwarded[k] = v;
-  }
-  res.json({ hostname: req.hostname, ip: req.ip, headers: forwarded });
-});
+// Decode the AWS ALB OIDC JWT from x-amzn-oidc-data.
+// The ALB guarantees authenticity — we just need the payload claims.
+function parseAlbOidcJwt(token) {
+  try {
+    const payload = token.split('.')[1];
+    const json = Buffer.from(
+      payload.replace(/-/g, '+').replace(/_/g, '/'),
+      'base64'
+    ).toString('utf8');
+    return JSON.parse(json);
+  } catch { return null; }
+}
 
 // GET /api/auth/me
-// Resolves the authenticated user via the Okta Identity Proxy header.
-// In development (no proxy header present) falls back to "LocalDevUser".
+// Resolves the authenticated user via the AWS ALB OIDC header injected by EasyDeploy.
+// In development (no proxy present) falls back to "LocalDevUser".
 // First-time visitors are auto-provisioned with starting resources.
 app.get('/api/auth/me', (req, res) => {
   try {
-    // Okta Identity Proxy injects the authenticated username via one of these headers.
-    const oktaUser =
-      req.headers['x-forwarded-user'] ||
-      req.headers['x-forwarded-preferred-username'] ||
-      req.headers['x-forwarded-email'];
+    // AWS ALB OIDC sets x-amzn-oidc-data — a JWT with the full Okta profile.
+    const oidcData = req.headers['x-amzn-oidc-data'];
+    let rawUsername = null;
+    if (oidcData) {
+      const claims = parseAlbOidcJwt(oidcData);
+      if (claims) {
+        // Use email prefix as the in-game username (e.g. "jingzhi.xu")
+        const email = claims.preferred_username || claims.email || '';
+        rawUsername = email.includes('@') ? email.split('@')[0] : email || claims.sub;
+      }
+    }
 
-    // Only fall back to a dev user when running locally (no proxy headers present).
+    // Dev fallback — only when no proxy headers are present (local machine)
     const isLocal = req.hostname === 'localhost' || req.hostname === '127.0.0.1';
-    const rawUsername = oktaUser || (isLocal ? 'LocalDevUser' : null);
+    rawUsername = rawUsername || (isLocal ? 'LocalDevUser' : null);
 
     if (!rawUsername) {
       return res.status(401).json({ error: 'Unauthenticated: no identity header present.' });
