@@ -19,12 +19,6 @@ app.use(cors(
 
 app.use(express.json());
 
-// Allow same-origin iframes (Godot game). The Okta proxy may inject
-// X-Frame-Options: DENY — override it so our own iframe can load.
-app.use((_req, res, next) => {
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  next();
-});
 
 // ─── Load config files ─────────────────────────────────────────────────────
 // Items catalog lives in backend/items.json — safe from Godot re-exports.

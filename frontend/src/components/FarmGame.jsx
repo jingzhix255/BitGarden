@@ -93,7 +93,8 @@ export default function FarmGame() {
   const { currentUser }          = useSession();
   const { userId: paramUserId }  = useParams();          // set when visiting /garden/:userId
   const navigate                 = useNavigate();
-  const iframeRef                = useRef(null);
+  const godotContainerRef        = useRef(null);
+  const godotEngineRef           = useRef(null);
 
   // Who owns this farm? Owner mode when viewing your own, visitor mode otherwise.
   const viewedUserId = paramUserId ? Number(paramUserId) : currentUser.id;
@@ -438,9 +439,8 @@ export default function FarmGame() {
     const MAX_ATTEMPTS = 20;
 
     const attemptLoad = () => {
-      const godot = iframeRef.current?.contentWindow;
-      if (godot && godot.loadFarmState) {
-        godot.loadFarmState(jsonString);
+      if (window.loadFarmState) {
+        window.loadFarmState(jsonString);
         return;
       }
 
@@ -463,7 +463,52 @@ export default function FarmGame() {
     loadFarm();
   }, [viewedUserId, loadFarm]);
 
-  const handleIframeLoad = () => loadFarm();
+  // ── Load Godot engine inline (no iframe — nginx blocks iframes with X-Frame-Options: DENY) ──
+  useEffect(() => {
+    if (godotEngineRef.current) return; // already loaded
+
+    const script = document.createElement('script');
+    script.src = '/farm_build/index.js';
+    script.async = true;
+    script.onload = () => {
+      const GODOT_CONFIG = {
+        args: [],
+        canvasResizePolicy: 2,
+        emscriptenPoolSize: 8,
+        ensureCrossOriginIsolationHeaders: false,
+        executable: '/farm_build/index',
+        experimentalVK: false,
+        fileSizes: { 'index.pck': 537936, 'index.wasm': 37685705 },
+        focusCanvas: true,
+        gdextensionLibs: [],
+        godotPoolSize: 4,
+        canvas: document.getElementById('godot-canvas'),
+      };
+      // eslint-disable-next-line no-undef
+      const engine = new Engine(GODOT_CONFIG);
+      godotEngineRef.current = engine;
+
+      const progressEl = document.getElementById('godot-status-progress');
+      engine.startGame({
+        onProgress: (current, total) => {
+          if (progressEl) {
+            if (total > 0) { progressEl.value = current; progressEl.max = total; }
+            else { progressEl.removeAttribute('value'); progressEl.removeAttribute('max'); }
+          }
+        },
+      }).then(() => {
+        if (progressEl) progressEl.style.display = 'none';
+      }).catch((err) => {
+        console.error('[Godot] Failed to start:', err);
+      });
+    };
+    document.head.appendChild(script);
+
+    return () => {
+      // Clean up the script tag if component unmounts before load
+      if (script.parentNode) script.parentNode.removeChild(script);
+    };
+  }, []);
 
   // ── Shop ──────────────────────────────────────────────────────────────────
   // Send item.name (display name) so it lands in inventory under the same key
@@ -488,9 +533,8 @@ export default function FarmGame() {
     const next      = isSame ? null : { type, name: godotName };
     setEquipped(next);
 
-    const godotWindow = iframeRef.current?.contentWindow;
-    if (godotWindow?.setGodotEquippedItem) {
-      godotWindow.setGodotEquippedItem(next?.type ?? null, next?.name ?? null);
+    if (window.setGodotEquippedItem) {
+      window.setGodotEquippedItem(next?.type ?? null, next?.name ?? null);
     }
     flash(next ? `🖱 Click the farm to place ${godotName}` : 'Unequipped');
   };
@@ -539,15 +583,15 @@ export default function FarmGame() {
           )}
         </div>
 
-        {/* ── CENTER: Godot iframe + title overlay ─────────────────── */}
-        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-          <iframe
-            ref={iframeRef}
-            title="Bit Garden Farm"
-            src="/farm_build/index.html"
-            onLoad={handleIframeLoad}
-            style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
-            allow="autoplay; fullscreen"
+        {/* ── CENTER: Godot canvas (inline — no iframe, nginx blocks iframes) ── */}
+        <div ref={godotContainerRef} style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#242424' }}>
+          <canvas
+            id="godot-canvas"
+            style={{ width: '100%', height: '100%', display: 'block', border: 'none' }}
+          />
+          <progress
+            id="godot-status-progress"
+            style={{ position: 'absolute', bottom: '10%', left: '25%', width: '50%' }}
           />
           {/* Farm title banner pinned to bottom-center over the Godot scene */}
           <div style={{ position: 'absolute', bottom: 24, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
