@@ -11,7 +11,7 @@ runtime: NODEJS_22
 build_command: npm install --prefix backend && npm install --prefix frontend && npm run build --prefix frontend
 
 # Start the Express backend (it serves the frontend/dist static files in production)
-start_command: NODE_ENV=production node backend/server.js
+start_command: sh -c "NODE_ENV=production PORT=8080 node backend/server.js"
 
 # Allow EasyDeploy to dynamically assign the port
 port: 8080
