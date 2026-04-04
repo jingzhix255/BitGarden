@@ -205,9 +205,11 @@ app.get('/api/auth/me', (req, res) => {
     if (oidcData) {
       const claims = parseAlbOidcJwt(oidcData);
       if (claims) {
-        // Use email prefix as the in-game username (e.g. "jingzhi.xu")
+        // Prefer given_name (e.g. "Jingzhi") for a friendly in-game display name.
+        // Fall back to email prefix, then sub if neither is present.
         const email = claims.preferred_username || claims.email || '';
-        rawUsername = email.includes('@') ? email.split('@')[0] : email || claims.sub;
+        const emailPrefix = email.includes('@') ? email.split('@')[0] : email;
+        rawUsername = claims.given_name || emailPrefix || claims.sub;
       }
     }
 

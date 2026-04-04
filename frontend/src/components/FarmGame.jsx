@@ -471,6 +471,21 @@ export default function FarmGame() {
     script.src = '/farm_build/index.js';
     script.async = true;
     script.onload = () => {
+      const canvas    = document.getElementById('godot-canvas');
+      const container = godotContainerRef.current;
+
+      // Size the canvas to its container before Godot initialises so
+      // canvasResizePolicy:2 has a correct starting size to expand from.
+      const syncSize = () => {
+        if (!container || !canvas) return;
+        const { width, height } = container.getBoundingClientRect();
+        canvas.width  = Math.floor(width);
+        canvas.height = Math.floor(height);
+      };
+      syncSize();
+      const ro = new ResizeObserver(syncSize);
+      if (container) ro.observe(container);
+
       const GODOT_CONFIG = {
         args: [],
         canvasResizePolicy: 2,
@@ -482,7 +497,7 @@ export default function FarmGame() {
         focusCanvas: true,
         gdextensionLibs: [],
         godotPoolSize: 4,
-        canvas: document.getElementById('godot-canvas'),
+        canvas,
       };
       // eslint-disable-next-line no-undef
       const engine = new Engine(GODOT_CONFIG);
@@ -587,7 +602,7 @@ export default function FarmGame() {
         <div ref={godotContainerRef} style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#242424' }}>
           <canvas
             id="godot-canvas"
-            style={{ width: '100%', height: '100%', display: 'block', border: 'none' }}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'block', border: 'none' }}
           />
           <progress
             id="godot-status-progress"
