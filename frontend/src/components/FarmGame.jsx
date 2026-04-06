@@ -110,7 +110,7 @@ export default function FarmGame() {
     setOnboardStep(null);
   };
   const nextOnboardStep = () => {
-    if (onboardStep >= 2) dismissOnboarding();
+    if (onboardStep >= ONBOARD_STEPS.length - 1) dismissOnboarding();
     else setOnboardStep(s => s + 1);
   };
 
@@ -1273,21 +1273,28 @@ const invNameStyle = (active) => ({
 const ONBOARD_STEPS = [
   {
     title: 'Welcome to your farm!',
-    text: 'Browse seeds and animals in the Shop, then buy them with your coins.',
+    text: 'Browse seeds and animals in the Shop and buy them with your coins.',
     spotlight: 'ob-spot--shop',
     tooltipPos: 'ob-tip--shop',
     arrow: 'left',
   },
   {
     title: 'Plant seeds in pots',
-    text: 'After buying a seed, click on a dirt pot in the farm to plant it. Use fertilizer to speed up growth!',
+    text: 'Select a seed from your Inventory, then click any dirt pot on the farm to plant it. Fertilize to speed up growth!',
     spotlight: 'ob-spot--pots',
     tooltipPos: 'ob-tip--pots',
     arrow: 'top',
   },
   {
+    title: 'Place animals on the grass',
+    text: 'Select an animal from your Inventory, then click anywhere on the green grass to place it. Watch your farm come alive!',
+    spotlight: 'ob-spot--grass',
+    tooltipPos: 'ob-tip--grass',
+    arrow: 'top',
+  },
+  {
     title: 'Earn coins & fertilizer',
-    text: 'Visit your neighbors and leave them a Kudo — you\'ll earn fertilizer, and they\'ll get a coin!',
+    text: 'Visit neighbors and leave a Kudo — you earn fertilizer, they earn a coin. Spread good vibes!',
     spotlight: 'ob-spot--economy',
     tooltipPos: 'ob-tip--economy',
     arrow: 'bottom',
@@ -1320,7 +1327,7 @@ function OnboardingOverlay({ step, onNext, onSkip }) {
             ))}
           </div>
           <button className="ob-next" onClick={onNext}>
-            {step >= 2 ? "Let's go!" : 'Next'}
+            {step >= ONBOARD_STEPS.length - 1 ? "Let's go!" : 'Next'}
           </button>
         </div>
       </div>

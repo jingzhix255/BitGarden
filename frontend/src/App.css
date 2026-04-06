@@ -2413,7 +2413,15 @@ body {
   height: 200px;
 }
 
-/* Step 3: highlight the bottom-right economy bar */
+/* Step 3: highlight the grass (right-center area of the canvas) */
+.ob-spot--grass {
+  top: 20%;
+  left: 55%;
+  right: 260px;
+  height: 220px;
+}
+
+/* Step 4: highlight the bottom-right economy bar */
 .ob-spot--economy {
   bottom: 0;
   right: 0;
@@ -2447,6 +2455,10 @@ body {
 .ob-tip--pots {
   top: calc(35% + 220px);
   left: 320px;
+}
+.ob-tip--grass {
+  top: calc(20% + 240px);
+  left: calc(55% + 20px);
 }
 .ob-tip--economy {
   bottom: 60px;
@@ -2579,9 +2591,10 @@ body {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.ob-tip--shop  { animation: ob-tip-in-shop  0.45s cubic-bezier(0.22, 1, 0.36, 1); }
-.ob-tip--pots  { animation: ob-tip-in-pots  0.45s cubic-bezier(0.22, 1, 0.36, 1); }
-.ob-tip--economy { animation: ob-tip-in-econ 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+.ob-tip--shop    { animation: ob-tip-in-shop  0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+.ob-tip--pots    { animation: ob-tip-in-pots  0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+.ob-tip--grass   { animation: ob-tip-in-pots  0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+.ob-tip--economy { animation: ob-tip-in-econ  0.45s cubic-bezier(0.22, 1, 0.36, 1); }
 
 @keyframes ob-tip-in-shop {
   from { opacity: 0; transform: translateY(-50%) translateX(-16px); }
@@ -2602,6 +2615,7 @@ body {
   .ob-tooltip,
   .ob-tip--shop,
   .ob-tip--pots,
+  .ob-tip--grass,
   .ob-tip--economy {
     animation: none !important;
   }

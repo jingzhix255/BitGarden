@@ -125,7 +125,9 @@ app.get('/api/auth/me', async (req, res) => {
     const username = rawUsername.trim();
     let user = await getUserByName(username);
 
+    let isNewUser = false;
     if (!user) {
+      isNewUser = true;
       const profileImage =
         `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(username)}`;
       try {
@@ -142,7 +144,7 @@ app.get('/api/auth/me', async (req, res) => {
       }
     }
 
-    res.json(user);
+    res.json({ ...user, is_new_user: isNewUser });
   } catch (err) {
     console.error('[auth/me]', err);
     res.status(500).json({ error: 'Internal server error.' });

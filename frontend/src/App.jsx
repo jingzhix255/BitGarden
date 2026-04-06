@@ -62,7 +62,14 @@ export default function App() {
         if (!r.ok) throw new Error(`Auth failed: ${r.status}`);
         return r.json();
       })
-      .then(user  => { setCurrentUser(user); setLoading(false); })
+      .then(user  => {
+        // Only new accounts get the onboarding; suppress it for existing users.
+        if (!user.is_new_user) {
+          localStorage.setItem('bitgarden_onboarded', '1');
+        }
+        setCurrentUser(user);
+        setLoading(false);
+      })
       .catch(err  => { setAuthError(err.message); setLoading(false); });
   }, []);
 
