@@ -143,6 +143,11 @@ export default function FarmGame() {
   const prevCoinsRef = useRef(null);
   const prevFertRef  = useRef(null);
 
+  // Fertilize pop-up animation — increments on each successful fertilize
+  const [fertAnimKey, setFertAnimKey] = useState(0);
+  // In-flight guard: prevents queuing multiple simultaneous fertilize calls
+  const fertInFlightRef = useRef(false);
+
   // ── Godot catalog (populated by GODOT_READY handshake) ──────────────────
   const [availablePlants,  setAvailablePlants]  = useState([]);
   const [availableAnimals, setAvailableAnimals] = useState([]);
@@ -406,6 +411,9 @@ export default function FarmGame() {
           flash('❌ No fertilizer left!');
           return;
         }
+        // Prevent double-firing while the previous request is still in flight
+        if (fertInFlightRef.current) return;
+        fertInFlightRef.current = true;
 
         const res = await fetch('/api/farm/fertilize', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -453,11 +461,13 @@ export default function FarmGame() {
               })),
             }));
           }
-          flash('🌿 Fertilized! +1 stage growth');
+          setFertAnimKey(k => k + 1);   // trigger canvas pop animation
+          flash('⏰ +12h growth applied!');
         } else {
           const r = await res.json();
           flash(`❌ ${r.error}`);
         }
+        fertInFlightRef.current = false;
       }
     };
 
@@ -717,6 +727,15 @@ export default function FarmGame() {
               </div>
             </div>
           )}
+          {/* ── Fertilize confirmation pop ── */}
+          {fertAnimKey > 0 && (
+            <div key={fertAnimKey} className="fg-fert-pop" aria-hidden="true">
+              <img src="/icons/fertilizer.png" alt="" width={20} height={20}
+                style={{ imageRendering: 'pixelated', verticalAlign: 'middle', marginRight: 6 }} />
+              +12h growth
+            </div>
+          )}
+
           {/* Farm title banner pinned to bottom-center over the Godot scene */}
           <div style={{ position: 'absolute', bottom: 24, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
             <div style={{ position: 'relative', display: 'inline-flex' }}>

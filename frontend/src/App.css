@@ -2377,6 +2377,46 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   FERTILIZE CONFIRMATION POP
+   ═══════════════════════════════════════════════════════════════════ */
+.fg-fert-pop {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translateX(-50%) translateY(0);
+  z-index: 80;
+  pointer-events: none;
+
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 22px;
+  background: #1a3a10;
+  border: 3px solid #5da840;
+  border-radius: 4px;
+  font-family: 'VT323', monospace;
+  font-size: 1.8rem;
+  color: #86efac;
+  white-space: nowrap;
+  text-shadow: 0 1px 0 #0a1a06;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+
+  animation: fg-fert-pop 1.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes fg-fert-pop {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(20px) scale(0.85); }
+  12%  { opacity: 1; transform: translateX(-50%) translateY(0px)  scale(1.08); }
+  25%  { opacity: 1; transform: translateX(-50%) translateY(0px)  scale(1);    }
+  80%  { opacity: 1; transform: translateX(-50%) translateY(-30px) scale(1);   }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-50px) scale(0.9); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fg-fert-pop { animation: none; opacity: 0; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    HARVEST ROW + SELL BUTTON
    ═══════════════════════════════════════════════════════════════════ */
 .fg-harvest-row {
