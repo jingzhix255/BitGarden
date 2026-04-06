@@ -2375,3 +2375,234 @@ body {
   .fg-loading-sprout__stem { height: 40px; }
   .fg-loading-sprout__leaf { opacity: 1; transform: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   ONBOARDING TOOLTIP OVERLAY
+   ═══════════════════════════════════════════════════════════════════ */
+.ob-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(0, 0, 0, 0.72);
+  animation: ob-fade-in 0.35s ease-out;
+}
+
+/* ── Spotlight cutout ── */
+.ob-spotlight {
+  position: absolute;
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.72);
+  border: 3px solid #5da840;
+  animation: ob-spot-in 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+/* Step 1: highlight left sidebar (shop) */
+.ob-spot--shop {
+  top: 0;
+  left: 0;
+  width: 260px;
+  bottom: 44px;
+}
+
+/* Step 2: highlight center-left area of canvas (pots region) */
+.ob-spot--pots {
+  top: 35%;
+  left: 280px;
+  width: 340px;
+  height: 200px;
+}
+
+/* Step 3: highlight the bottom-right economy bar */
+.ob-spot--economy {
+  bottom: 0;
+  right: 0;
+  width: 240px;
+  height: 44px;
+}
+
+/* ── Tooltip card ── */
+.ob-tooltip {
+  position: absolute;
+  z-index: 910;
+  width: 320px;
+  background: #1a2810;
+  border: 3px solid #3a6030;
+  border-radius: 4px;
+  padding: 20px 22px 16px;
+  font-family: 'VT323', monospace;
+  color: #c8d8a0;
+  box-shadow:
+    0 0 0 1px #0a0e06,
+    0 8px 32px rgba(0, 0, 0, 0.5);
+  animation: ob-tip-in 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Tooltip positions per step */
+.ob-tip--shop {
+  top: 50%;
+  left: 282px;
+  transform: translateY(-50%);
+}
+.ob-tip--pots {
+  top: calc(35% + 220px);
+  left: 320px;
+}
+.ob-tip--economy {
+  bottom: 60px;
+  right: 20px;
+}
+
+/* ── Arrow pointer ── */
+.ob-arrow {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.ob-arrow--left {
+  top: 50%;
+  left: -12px;
+  transform: translateY(-50%);
+  border-top: 10px solid transparent;
+  border-bottom: 10px solid transparent;
+  border-right: 12px solid #3a6030;
+}
+.ob-arrow--top {
+  top: -12px;
+  left: 40px;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-bottom: 12px solid #3a6030;
+}
+.ob-arrow--bottom {
+  bottom: -12px;
+  right: 40px;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-top: 12px solid #3a6030;
+}
+
+/* ── Step badge ── */
+.ob-step-badge {
+  display: inline-block;
+  font-size: 0.85rem;
+  color: #5da840;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+/* ── Title ── */
+.ob-title {
+  font-size: 1.5rem;
+  color: #e8f0d0;
+  margin: 0 0 8px;
+  text-shadow: 0 1px 0 #0a0e06;
+}
+
+/* ── Body text ── */
+.ob-text {
+  font-size: 1.15rem;
+  line-height: 1.45;
+  color: #a0b880;
+  margin: 0 0 18px;
+}
+
+/* ── Controls row ── */
+.ob-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ob-skip {
+  background: none;
+  border: none;
+  font-family: 'VT323', monospace;
+  font-size: 1.05rem;
+  color: #5a7a40;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: color 0.15s;
+}
+.ob-skip:hover { color: #c8d8a0; }
+
+.ob-next {
+  background: #3a6030;
+  border: 2px solid #5da840;
+  border-radius: 3px;
+  font-family: 'VT323', monospace;
+  font-size: 1.15rem;
+  color: #e8f0d0;
+  padding: 6px 20px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: background 0.15s, transform 0.1s;
+}
+.ob-next:hover {
+  background: #4a7a3a;
+}
+.ob-next:active {
+  transform: scale(0.96);
+}
+
+/* ── Step dots ── */
+.ob-dots {
+  display: flex;
+  gap: 6px;
+}
+.ob-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2a3a20;
+  border: 1px solid #3a6030;
+  transition: background 0.25s, transform 0.25s;
+}
+.ob-dot--active {
+  background: #5da840;
+  transform: scale(1.3);
+  box-shadow: 0 0 6px #5da84066;
+}
+
+/* ── Animations ── */
+@keyframes ob-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes ob-spot-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes ob-tip-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ob-tip--shop  { animation: ob-tip-in-shop  0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+.ob-tip--pots  { animation: ob-tip-in-pots  0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+.ob-tip--economy { animation: ob-tip-in-econ 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+
+@keyframes ob-tip-in-shop {
+  from { opacity: 0; transform: translateY(-50%) translateX(-16px); }
+  to   { opacity: 1; transform: translateY(-50%) translateX(0); }
+}
+@keyframes ob-tip-in-pots {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes ob-tip-in-econ {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ob-backdrop,
+  .ob-spotlight,
+  .ob-tooltip,
+  .ob-tip--shop,
+  .ob-tip--pots,
+  .ob-tip--economy {
+    animation: none !important;
+  }
+}

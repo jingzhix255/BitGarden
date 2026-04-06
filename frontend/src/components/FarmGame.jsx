@@ -100,6 +100,20 @@ export default function FarmGame() {
   const [godotLoading, setGodotLoading]     = useState(true);
   const [loadProgress, setLoadProgress]     = useState(0);
 
+  // Onboarding — show once per device for owners
+  const ONBOARD_KEY = 'bitgarden_onboarded';
+  const [onboardStep, setOnboardStep] = useState(() =>
+    localStorage.getItem(ONBOARD_KEY) ? null : 0
+  );
+  const dismissOnboarding = () => {
+    localStorage.setItem(ONBOARD_KEY, '1');
+    setOnboardStep(null);
+  };
+  const nextOnboardStep = () => {
+    if (onboardStep >= 2) dismissOnboarding();
+    else setOnboardStep(s => s + 1);
+  };
+
   // Who owns this farm? Owner mode when viewing your own, visitor mode otherwise.
   const viewedUserId = paramUserId ? Number(paramUserId) : currentUser.id;
   const isOwner      = viewedUserId === currentUser.id;
@@ -740,6 +754,15 @@ export default function FarmGame() {
           <span className={popFert ? 'fg-stat--pop' : ''}>{myUser?.fertilizer ?? 0}</span>
         </span>
       </div>
+
+      {/* ── Onboarding tooltip overlay ────────────────────────────────── */}
+      {isOwner && !godotLoading && onboardStep != null && (
+        <OnboardingOverlay
+          step={onboardStep}
+          onNext={nextOnboardStep}
+          onSkip={dismissOnboarding}
+        />
+      )}
     </div>
   );
 }
@@ -1245,3 +1268,62 @@ const sectionLabel = {
 const invNameStyle = (active) => ({
   fontSize: '1.25rem', color: active ? '#86efac' : '#b9e6b1',
 });
+
+// ─── Onboarding overlay ──────────────────────────────────────────────────────
+const ONBOARD_STEPS = [
+  {
+    title: 'Welcome to your farm!',
+    text: 'Browse seeds and animals in the Shop, then buy them with your coins.',
+    spotlight: 'ob-spot--shop',
+    tooltipPos: 'ob-tip--shop',
+    arrow: 'left',
+  },
+  {
+    title: 'Plant seeds in pots',
+    text: 'After buying a seed, click on a dirt pot in the farm to plant it. Use fertilizer to speed up growth!',
+    spotlight: 'ob-spot--pots',
+    tooltipPos: 'ob-tip--pots',
+    arrow: 'top',
+  },
+  {
+    title: 'Earn coins & fertilizer',
+    text: 'Visit your neighbors and leave them a Kudo — you\'ll earn fertilizer, and they\'ll get a coin!',
+    spotlight: 'ob-spot--economy',
+    tooltipPos: 'ob-tip--economy',
+    arrow: 'bottom',
+  },
+];
+
+function OnboardingOverlay({ step, onNext, onSkip }) {
+  const s = ONBOARD_STEPS[step];
+  if (!s) return null;
+
+  return (
+    <div className="ob-backdrop" onClick={onNext}>
+      {/* Spotlight cutout */}
+      <div className={`ob-spotlight ${s.spotlight}`} />
+
+      {/* Tooltip card */}
+      <div
+        className={`ob-tooltip ${s.tooltipPos}`}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className={`ob-arrow ob-arrow--${s.arrow}`} />
+        <div className="ob-step-badge">Step {step + 1} of 3</div>
+        <h3 className="ob-title">{s.title}</h3>
+        <p className="ob-text">{s.text}</p>
+        <div className="ob-controls">
+          <button className="ob-skip" onClick={onSkip}>Skip</button>
+          <div className="ob-dots">
+            {ONBOARD_STEPS.map((_, i) => (
+              <span key={i} className={`ob-dot ${i === step ? 'ob-dot--active' : ''}`} />
+            ))}
+          </div>
+          <button className="ob-next" onClick={onNext}>
+            {step >= 2 ? "Let's go!" : 'Next'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
