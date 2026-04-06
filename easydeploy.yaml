@@ -4,7 +4,8 @@ team: org-product
 # Custom URL for your game
 subdomain: bitgarden
 
-# node:sqlite requires Node.js >= 22.5
+# @libsql/client is pure JS — no native compilation needed.
+# NODEJS_22 kept for compatibility with the rest of the codebase.
 runtime: NODEJS_22
 
 # Install all deps, then build the React frontend into frontend/dist
@@ -15,3 +16,9 @@ start_command: node backend/server.js
 
 # Allow EasyDeploy to dynamically assign the port
 port: 8080
+
+# Turso database credentials
+env_vars:
+  NODE_ENV: production
+  TURSO_DATABASE_URL: "libsql://bitgarden-jingzhix255.aws-us-west-2.turso.io"
+  TURSO_AUTH_TOKEN: "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzU0NDEwNTIsImlkIjoiMDE5ZDYwODgtMmMwMS03NDA5LThiNDctOWM2ZWNlZDQ5YWY3IiwicmlkIjoiZGE5MTZjYjgtMTY3Mi00MDhkLWFlN2UtNmE1ZWY3NDQ3MWRiIn0.JO468RLuWowN9JhRaOThiH9uw6mA8BU4hznwkmw-MT6wucM-0-nhL71KWuHs80syuEdDjU1li3JCmOvyrIROBQ"
