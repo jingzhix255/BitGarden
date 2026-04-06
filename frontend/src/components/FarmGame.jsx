@@ -578,6 +578,22 @@ export default function FarmGame() {
     else         flash(`❌ ${(await res.json()).error}`, 'error');
   };
 
+  // ── Sell a harvested crop ────────────────────────────────────────────────
+  const sellCrop = async (cropName) => {
+    const res = await fetch('/api/sell', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: currentUser.id, crop_name: cropName }),
+    });
+    const r = await res.json();
+    if (res.ok) {
+      setMyUser(r.user);
+      setInventory(r.inventory);
+      flash(`🪙 Sold ${toGodotName(cropName)} for +${r.sell_value} coins!`);
+    } else {
+      flash(`❌ ${r.error}`);
+    }
+  };
+
   // ── Equip an item — calls Godot's exposed JS function ───────────────────
   // type: "seed" | "animal"   name: any format — normalized to Title Case via toGodotName
   const equipItem = (type, name) => {
@@ -625,11 +641,11 @@ export default function FarmGame() {
               myUser={myUser}
               inventory={inventory}
               placeableItems={placeableItems}
-
               allShopItems={allShopItems}
               equipped={equipped}
               onBuy={buyItem}
               onEquip={equipItem}
+              onSell={sellCrop}
               availablePlants={availablePlants}
               availableAnimals={availableAnimals}
             />
@@ -771,7 +787,7 @@ export default function FarmGame() {
 function OwnerSidebar({
   tab, setTab, shopCfg, myUser,
   inventory, placeableItems, allShopItems,
-  equipped, onBuy, onEquip,
+  equipped, onBuy, onEquip, onSell,
   availablePlants, availableAnimals,
 }) {
   const shopSeedNames   = availablePlants.length
@@ -877,18 +893,26 @@ function OwnerSidebar({
               return harvestedItems.length > 0 ? (
                 <>
                   <p style={sectionLabel}>🌾 Harvested</p>
-                  <div className="fg-stagger">
+                  <div className="fg-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {harvestedItems.map(([key, qty]) => {
                       const crop = key.replace('harvested_', '');
                       const meta = shopCfg.seeds?.find(
                         s => s.crop === crop || toGodotName(s.name).toLowerCase() === crop.toLowerCase()
                       );
+                      const sellValue = meta?.sell_value ?? '?';
                       return (
-                        <div key={key} className="fg-inv-card fg-inv-card--harvested" style={{ cursor: 'default', pointerEvents: 'none' }}>
-                          <span style={{ ...invNameStyle(false), display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <ItemIcon name={toGodotName(crop)} size={20} />{toGodotName(crop)}
-                          </span>
-                          <span style={{ fontSize: '1.1rem', color: '#86efac' }}>×{qty}</span>
+                        <div key={key} className="fg-harvest-row">
+                          <ItemIcon name={toGodotName(crop)} size={28} />
+                          <span className="fg-harvest-row__name">{toGodotName(crop)}</span>
+                          <span className="fg-harvest-row__qty">×{qty}</span>
+                          <button
+                            className="fg-sell-btn"
+                            onClick={() => onSell(crop)}
+                            title={`Sell 1 for ${sellValue} coins`}
+                          >
+                            <PixelImg src="/icons/money.png" alt="coin" size={14} />
+                            <span>+{sellValue}</span>
+                          </button>
                         </div>
                       );
                     })}

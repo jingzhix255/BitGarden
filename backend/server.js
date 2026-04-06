@@ -203,7 +203,8 @@ app.post('/api/kudos/leave', async (req, res) => {
     args: [sender_id ? Number(sender_id) : null, sender_name.trim(), Number(receiver_id), message.trim()],
   });
 
-  await db.execute({ sql: 'UPDATE users SET coins = coins + 1 WHERE id = ?', args: [Number(receiver_id)] });
+  // Receiver gets +2 coins; sender gets +1 fertilizer
+  await db.execute({ sql: 'UPDATE users SET coins = coins + 2 WHERE id = ?', args: [Number(receiver_id)] });
 
   let updatedSender = null;
   if (sender_id) {
@@ -484,6 +485,63 @@ app.post('/api/farm/harvest', async (req, res) => {
   } catch (error) {
     console.error('Harvest Error:', error);
     res.status(500).json({ error: error.message || 'Internal Server Error' });
+  }
+});
+
+// POST /api/sell
+// Sells one unit of a fully harvested crop from inventory for its sell_value in coins.
+app.post('/api/sell', async (req, res) => {
+  try {
+    const { user_id, crop_name } = req.body;
+    const userId = Number(user_id);
+
+    if (!crop_name) return res.status(400).json({ error: 'crop_name is required.' });
+
+    const user = await getUser(userId);
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+
+    // Inventory key for harvested crops uses the "harvested_<crop>" convention.
+    const cropLower  = crop_name.toLowerCase().trim();
+    const invKey     = cropLower.startsWith('harvested_') ? cropLower : `harvested_${cropLower}`;
+    const invMap     = await getInventoryMap(userId);
+    const qty        = invMap[invKey] ?? 0;
+
+    if (qty < 1) return res.status(400).json({ error: `No harvested ${crop_name} to sell.` });
+
+    // Look up sell_value from config (match by crop field or by name).
+    const seedEntry  = SHOP_CONFIG.seeds.find(s =>
+      s.crop?.toLowerCase() === cropLower ||
+      s.name.toLowerCase()  === cropLower
+    );
+    const sellValue  = seedEntry?.sell_value ?? 1;
+
+    const tx = await db.transaction('write');
+    try {
+      await tx.execute({
+        sql: `INSERT INTO inventory (user_id, item_name, quantity) VALUES (?, ?, 0)
+              ON CONFLICT(user_id, item_name) DO UPDATE SET quantity = MAX(0, quantity - 1)`,
+        args: [userId, invKey],
+      });
+      await tx.execute({
+        sql: 'UPDATE users SET coins = coins + ? WHERE id = ?',
+        args: [sellValue, userId],
+      });
+      await tx.commit();
+    } catch (txErr) {
+      await tx.rollback();
+      return res.status(500).json({ error: txErr.message || 'Transaction failed.' });
+    }
+
+    res.json({
+      success:    true,
+      sold:       crop_name,
+      sell_value: sellValue,
+      user:       await getUser(userId),
+      inventory:  await getInventoryMap(userId),
+    });
+  } catch (err) {
+    console.error('[sell]', err);
+    res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 });
 

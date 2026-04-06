@@ -2377,6 +2377,64 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   HARVEST ROW + SELL BUTTON
+   ═══════════════════════════════════════════════════════════════════ */
+.fg-harvest-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #141f0e;
+  border: 2px solid #2a3d1a;
+  border-radius: 4px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.fg-harvest-row:hover {
+  border-color: #4a7a30;
+  background: #1a2d10;
+}
+.fg-harvest-row__name {
+  flex: 1;
+  font-family: 'VT323', monospace;
+  font-size: 1.2rem;
+  color: #b9e6b1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fg-harvest-row__qty {
+  font-family: 'VT323', monospace;
+  font-size: 1.1rem;
+  color: #5a7a40;
+  min-width: 28px;
+  text-align: right;
+}
+.fg-sell-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: #2a1a08;
+  border: 2px solid #c07830;
+  border-radius: 3px;
+  font-family: 'VT323', monospace;
+  font-size: 1.1rem;
+  color: #ee9a40;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, transform 0.1s, color 0.12s;
+  flex-shrink: 0;
+}
+.fg-sell-btn:hover {
+  background: #3a2410;
+  border-color: #ee9a40;
+  color: #ffc060;
+}
+.fg-sell-btn:active {
+  transform: scale(0.94);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    ONBOARDING TOOLTIP OVERLAY
    ═══════════════════════════════════════════════════════════════════ */
 .ob-backdrop {
