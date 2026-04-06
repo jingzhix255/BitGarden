@@ -96,6 +96,10 @@ export default function FarmGame() {
   const godotContainerRef        = useRef(null);
   const godotEngineRef           = useRef(null);
 
+  // Loading screen state
+  const [godotLoading, setGodotLoading]     = useState(true);
+  const [loadProgress, setLoadProgress]     = useState(0);
+
   // Who owns this farm? Owner mode when viewing your own, visitor mode otherwise.
   const viewedUserId = paramUserId ? Number(paramUserId) : currentUser.id;
   const isOwner      = viewedUserId === currentUser.id;
@@ -505,21 +509,16 @@ export default function FarmGame() {
       const engine = new Engine(GODOT_CONFIG);
       godotEngineRef.current = engine;
 
-      const progressEl = document.getElementById('godot-status-progress');
-      if (progressEl) progressEl.style.display = 'block';
-
       engine.startGame({
         onProgress: (current, total) => {
-          if (progressEl) {
-            if (total > 0) { progressEl.value = current; progressEl.max = total; }
-            else { progressEl.removeAttribute('value'); progressEl.removeAttribute('max'); }
-          }
+          if (total > 0) setLoadProgress(Math.round((current / total) * 100));
         },
       }).then(() => {
-        // Hide progress bar so it no longer blocks canvas click events
-        if (progressEl) progressEl.style.display = 'none';
+        setLoadProgress(100);
+        setTimeout(() => setGodotLoading(false), 400);
       }).catch((err) => {
         console.error('[Godot] Failed to start:', err);
+        setGodotLoading(false);
       });
     };
     document.head.appendChild(script);
@@ -609,11 +608,42 @@ export default function FarmGame() {
             id="godot-canvas"
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'block', border: 'none' }}
           />
-          {/* Hidden by default; shown during WASM download, hidden again after game starts */}
-          <progress
-            id="godot-status-progress"
-            style={{ display: 'none', position: 'absolute', bottom: '10%', left: '25%', width: '50%', pointerEvents: 'none', zIndex: 1 }}
-          />
+          {/* ── Loading screen overlay ── */}
+          {godotLoading && (
+            <div className="fg-loading-overlay" style={{ opacity: loadProgress >= 100 ? 0 : 1, transition: 'opacity 0.4s ease-out' }}>
+              <div className="fg-loading-scene">
+                {/* Animated pixel sun */}
+                <div className="fg-loading-sun" />
+
+                {/* Ground strip */}
+                <div className="fg-loading-ground" />
+
+                {/* Animated sprout */}
+                <div className="fg-loading-sprout">
+                  <div className="fg-loading-sprout__stem" />
+                  <div className="fg-loading-sprout__leaf fg-loading-sprout__leaf--l" />
+                  <div className="fg-loading-sprout__leaf fg-loading-sprout__leaf--r" />
+                </div>
+              </div>
+
+              {/* Title */}
+              <div className="fg-loading-title">Preparing your farm…</div>
+
+              {/* Progress bar */}
+              <div className="fg-loading-bar-track">
+                <div className="fg-loading-bar-fill" style={{ width: `${loadProgress}%` }} />
+              </div>
+              <div className="fg-loading-percent">{loadProgress}%</div>
+
+              {/* Flavor tip */}
+              <div className="fg-loading-tip">
+                {loadProgress < 30 ? 'Tilling the soil…' :
+                 loadProgress < 60 ? 'Planting seeds…' :
+                 loadProgress < 90 ? 'Watering crops…' :
+                 'Almost harvest time!'}
+              </div>
+            </div>
+          )}
           {/* Farm title banner pinned to bottom-center over the Godot scene */}
           <div style={{ position: 'absolute', bottom: 24, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
             <div style={{ position: 'relative', display: 'inline-flex' }}>

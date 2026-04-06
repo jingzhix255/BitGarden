@@ -2198,3 +2198,180 @@ body {
   .ab-skeleton       { grid-template-columns: 1fr; }
   .ab-card           { --tilt: 0deg; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   GODOT LOADING SCREEN
+   ═══════════════════════════════════════════════════════════════════ */
+.fg-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2rem;
+  background: linear-gradient(175deg, #1a2810 0%, #0d1a06 45%, #0a0e06 100%);
+  pointer-events: none;
+  font-family: 'VT323', monospace;
+  image-rendering: pixelated;
+}
+
+/* ── Scene: sun + ground + sprout ── */
+.fg-loading-scene {
+  position: relative;
+  width: 200px;
+  height: 140px;
+  margin-bottom: 0.4rem;
+}
+
+/* Pixel sun */
+.fg-loading-sun {
+  position: absolute;
+  top: 8px;
+  right: 18px;
+  width: 40px;
+  height: 40px;
+  background: #f9d71c;
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 4px #f9d71c44,
+    0 0 24px 8px #f9d71c33,
+    8px 0 0 #f9d71c, -8px 0 0 #f9d71c,
+    0 8px 0 #f9d71c, 0 -8px 0 #f9d71c;
+  animation: fg-sun-pulse 3s ease-in-out infinite;
+}
+
+/* Ground */
+.fg-loading-ground {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  background:
+    repeating-linear-gradient(90deg, #5a3921 0px, #5a3921 8px, #6b4423 8px, #6b4423 16px);
+  border-top: 4px solid #3a6030;
+}
+
+/* Animated sprout */
+.fg-loading-sprout {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  animation: fg-sprout-grow 2.5s ease-out forwards;
+}
+.fg-loading-sprout__stem {
+  width: 6px;
+  height: 0;
+  background: #3a6030;
+  margin: 0 auto;
+  border-radius: 1px;
+  animation: fg-stem-grow 1.5s ease-out 0.3s forwards;
+}
+.fg-loading-sprout__leaf {
+  position: absolute;
+  top: 0;
+  width: 18px;
+  height: 12px;
+  background: #5da840;
+  border-radius: 50% 50% 50% 0;
+  opacity: 0;
+}
+.fg-loading-sprout__leaf--l {
+  right: 4px;
+  transform: rotate(-30deg) scale(0);
+  animation: fg-leaf-l 0.6s ease-out 1.6s forwards;
+}
+.fg-loading-sprout__leaf--r {
+  left: 4px;
+  transform: rotate(30deg) scaleX(-1) scale(0);
+  animation: fg-leaf-r 0.6s ease-out 1.9s forwards;
+}
+
+/* ── Title ── */
+.fg-loading-title {
+  font-size: 1.8rem;
+  letter-spacing: 3px;
+  color: #c8d8a0;
+  text-shadow: 0 2px 0 #1a2810, 0 0 16px #3a603044;
+}
+
+/* ── Progress bar ── */
+.fg-loading-bar-track {
+  width: min(300px, 70%);
+  height: 18px;
+  background: #1a2810;
+  border: 3px solid #3a6030;
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px #0005;
+}
+.fg-loading-bar-fill {
+  height: 100%;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      #5da840 0px, #5da840 6px,
+      #4d9630 6px, #4d9630 12px
+    );
+  background-size: 17px 100%;
+  transition: width 0.3s ease-out;
+  animation: fg-bar-scroll 0.6s linear infinite;
+  box-shadow: 0 0 8px #5da84066;
+}
+
+/* ── Percent counter ── */
+.fg-loading-percent {
+  font-size: 1.3rem;
+  color: #5da840;
+  letter-spacing: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Flavor tip ── */
+.fg-loading-tip {
+  font-size: 1.1rem;
+  color: #5a7a40;
+  letter-spacing: 1px;
+  animation: fg-tip-pulse 2s ease-in-out infinite;
+}
+
+/* ── Keyframes ── */
+@keyframes fg-sun-pulse {
+  0%, 100% { transform: scale(1);    opacity: 1;   }
+  50%      { transform: scale(1.08); opacity: 0.85; }
+}
+@keyframes fg-stem-grow {
+  from { height: 0; }
+  to   { height: 40px; }
+}
+@keyframes fg-leaf-l {
+  to { opacity: 1; transform: rotate(-30deg) scale(1); }
+}
+@keyframes fg-leaf-r {
+  to { opacity: 1; transform: rotate(30deg) scaleX(-1) scale(1); }
+}
+@keyframes fg-bar-scroll {
+  from { background-position: 0 0; }
+  to   { background-position: 17px 0; }
+}
+@keyframes fg-tip-pulse {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1;   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fg-loading-sun,
+  .fg-loading-sprout,
+  .fg-loading-sprout__stem,
+  .fg-loading-sprout__leaf--l,
+  .fg-loading-sprout__leaf--r,
+  .fg-loading-bar-fill,
+  .fg-loading-tip {
+    animation: none !important;
+  }
+  .fg-loading-sprout__stem { height: 40px; }
+  .fg-loading-sprout__leaf { opacity: 1; transform: none; }
+}
