@@ -621,17 +621,18 @@ app.get('/api/neighborhood/board', async (_req, res) => {
       SELECT u.id, u.username, COUNT(fi.id) AS item_count
       FROM farm_items fi
       JOIN users u ON u.id = fi.user_id
+      WHERE u.username != 'LocalDevUser'
       GROUP BY fi.user_id
       ORDER BY item_count DESC
       LIMIT 1
     `);
 
     const { rows: [tycoon] } = await db.execute(
-      'SELECT id, username, coins FROM users ORDER BY coins DESC LIMIT 1'
+      "SELECT id, username, coins FROM users WHERE username != 'LocalDevUser' ORDER BY coins DESC LIMIT 1"
     );
 
     const { rows: [newest] } = await db.execute(
-      'SELECT id, username FROM users ORDER BY id DESC LIMIT 1'
+      "SELECT id, username FROM users WHERE username != 'LocalDevUser' ORDER BY id DESC LIMIT 1"
     );
 
     res.json({
