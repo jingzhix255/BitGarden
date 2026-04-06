@@ -151,7 +151,7 @@ app.get('/api/auth/me', async (req, res) => {
 
 // GET /api/users
 app.get('/api/users', async (_req, res) => {
-  const { rows } = await db.execute('SELECT * FROM users ORDER BY id ASC');
+  const { rows } = await db.execute("SELECT * FROM users WHERE username != 'LocalDevUser' ORDER BY id ASC");
   res.json(rows);
 });
 
