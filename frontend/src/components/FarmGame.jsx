@@ -311,6 +311,18 @@ export default function FarmGame() {
           const r = await res.json();
           setInventory(r.inventory);
           setEquipped(null);
+          // Update local farmState so fertilize and pot-occupied checks work
+          // immediately without a refresh.
+          const now = Date.now();
+          setFarmState(prev => {
+            const updated = { ...(prev ?? { pots: [], animals: [] }) };
+            updated.pots = [...(updated.pots ?? []), { pot_id, seed, placed_at: now }];
+            return updated;
+          });
+          setFarmItems(prev => [
+            ...prev,
+            { user_id: myId, item_type: 'plant', item_name: seed, pot_id, placed_at: now },
+          ]);
           flash(`🌱 Planted ${seed}!`);
         } else {
           const r = await res.json();
@@ -331,6 +343,16 @@ export default function FarmGame() {
           const r = await res.json();
           setInventory(r.inventory);
           setEquipped(null);
+          const now = Date.now();
+          setFarmState(prev => {
+            const updated = { ...(prev ?? { pots: [], animals: [] }) };
+            updated.animals = [...(updated.animals ?? []), { animal, x: Number(x ?? 0), y: Number(y ?? 0), placed_at: now }];
+            return updated;
+          });
+          setFarmItems(prev => [
+            ...prev,
+            { user_id: myId, item_type: 'animal', item_name: animal, home_x: Number(x ?? 0), home_y: Number(y ?? 0), placed_at: now },
+          ]);
           flash(`🐾 Placed ${animal}!`);
         } else {
           const r = await res.json();
