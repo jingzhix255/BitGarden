@@ -413,25 +413,46 @@ export default function FarmGame() {
         });
         if (res.ok) {
           const r = await res.json();
-          // Only mutate state after a confirmed 200 OK.
           setMyUser(r.user);
-          // Update placed_at in both farmState (for Godot sync) and farmItems (for re-renders).
-          setFarmState(prev => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              pots: (prev.pots ?? []).map(p =>
-                normalizePotId(p.pot_id) === pot_id
-                  ? { ...p, placed_at: r.new_placed_at }
-                  : p
-              ),
-            };
-          });
+
+          // Build updated farm state immediately so we can push to Godot
+          // synchronously — don't wait for React's async state cycle.
+          const newPots = (farmStateRef.current?.pots ?? []).map(p =>
+            normalizePotId(p.pot_id) === pot_id
+              ? { ...p, placed_at: r.new_placed_at }
+              : p
+          );
+          const newFarmState = {
+            ...(farmStateRef.current ?? { pots: [], animals: [] }),
+            pots: newPots,
+          };
+          farmStateRef.current = newFarmState;
+          setFarmState(newFarmState);
           setFarmItems(prev => prev.map(fi =>
             (fi.item_type === 'plant' && normalizePotId(fi.pot_id) === pot_id)
               ? { ...fi, placed_at: r.new_placed_at }
               : fi
           ));
+
+          // Push fresh elapsed_time directly to Godot without waiting for
+          // the bridge useEffect (which only fires after the next render tick).
+          if (window.loadFarmState) {
+            window.loadFarmState(JSON.stringify({
+              farm_owner_id: theirId,
+              is_owner:      true,
+              pots: newPots.map(p => ({
+                pot_id:       normalizePotId(p.pot_id),
+                seed:         toGodotName(p.seed),
+                elapsed_time: Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
+              })),
+              animals: (newFarmState.animals ?? []).map(a => ({
+                animal:       toGodotName(a.animal),
+                x:            Number(a.x ?? 0),
+                y:            Number(a.y ?? 0),
+                elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
+              })),
+            }));
+          }
           flash('🌿 Fertilized! +1 stage growth');
         } else {
           const r = await res.json();

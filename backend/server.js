@@ -501,26 +501,32 @@ app.post('/api/sell', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found.' });
 
     // Inventory key for harvested crops uses the "harvested_<crop>" convention.
-    const cropLower  = crop_name.toLowerCase().trim();
-    const invKey     = cropLower.startsWith('harvested_') ? cropLower : `harvested_${cropLower}`;
-    const invMap     = await getInventoryMap(userId);
-    const qty        = invMap[invKey] ?? 0;
+    // Use case-insensitive lookup because the harvest route stores Title-Case keys
+    // (e.g. "harvested_Pumpkin") while crop_name may arrive as any casing.
+    const cropLower = crop_name.toLowerCase().trim();
+    const invKeyLower = `harvested_${cropLower}`;
+    const { rows: [invRow] } = await db.execute({
+      sql: 'SELECT item_name, quantity FROM inventory WHERE user_id = ? AND LOWER(item_name) = ?',
+      args: [userId, invKeyLower],
+    });
+    const actualKey = invRow?.item_name;          // preserve exact DB casing
+    const qty       = Number(invRow?.quantity ?? 0);
 
     if (qty < 1) return res.status(400).json({ error: `No harvested ${crop_name} to sell.` });
 
     // Look up sell_value from config (match by crop field or by name).
-    const seedEntry  = SHOP_CONFIG.seeds.find(s =>
+    const seedEntry = SHOP_CONFIG.seeds.find(s =>
       s.crop?.toLowerCase() === cropLower ||
       s.name.toLowerCase()  === cropLower
     );
-    const sellValue  = seedEntry?.sell_value ?? 1;
+    const sellValue = seedEntry?.sell_value ?? 1;
 
     const tx = await db.transaction('write');
     try {
       await tx.execute({
         sql: `INSERT INTO inventory (user_id, item_name, quantity) VALUES (?, ?, 0)
               ON CONFLICT(user_id, item_name) DO UPDATE SET quantity = MAX(0, quantity - 1)`,
-        args: [userId, invKey],
+        args: [userId, actualKey],
       });
       await tx.execute({
         sql: 'UPDATE users SET coins = coins + ? WHERE id = ?',
