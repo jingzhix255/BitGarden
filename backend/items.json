@@ -18,7 +18,6 @@
     { "id": "watermelon_seeds",  "name": "Watermelon",  "emoji": "🍉", "cost": 5,  "sell_value": 10, "growth_seconds": 240, "crop": "watermelon"  }
   ],
   "animals": [
-    { "id": "chicken",  "name": "Chicken",  "emoji": "🐔", "cost": 5  },
     { "id": "rabbit",   "name": "Rabbit",   "emoji": "🐰", "cost": 6  },
     { "id": "pig",      "name": "Pig",      "emoji": "🐷", "cost": 7  },
     { "id": "sheep",    "name": "Sheep",    "emoji": "🐑", "cost": 8  },
