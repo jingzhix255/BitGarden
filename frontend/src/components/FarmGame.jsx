@@ -238,10 +238,16 @@ export default function FarmGame() {
           const rawTs      = Number(p.placed_at ?? 0);
           const placedMs   = rawTs > 0 && rawTs < 1e11 ? rawTs * 1000 : rawTs;
           const safePlaced = placedMs > 0 ? placedMs : Date.now();
+          // planted_at = original planting time (never mutated by fertilize).
+          // Falls back to placed_at for legacy rows that predate this column.
+          const rawPt      = Number(p.planted_at ?? p.placed_at ?? 0);
+          const plantedMs  = rawPt > 0 && rawPt < 1e11 ? rawPt * 1000 : rawPt;
+          const safePlanted = plantedMs > 0 ? plantedMs : safePlaced;
           return {
-            pot_id:    normalizePotId(p.pot_id),
-            seed:      toGodotName(p.seed),
-            placed_at: safePlaced,
+            pot_id:     normalizePotId(p.pot_id),
+            seed:       toGodotName(p.seed),
+            placed_at:  safePlaced,
+            planted_at: safePlanted,
           };
         }),
         animals: (raw.animals ?? []).map(a => {
@@ -335,12 +341,12 @@ export default function FarmGame() {
           const now = Date.now();
           setFarmState(prev => {
             const updated = { ...(prev ?? { pots: [], animals: [] }) };
-            updated.pots = [...(updated.pots ?? []), { pot_id, seed, placed_at: now }];
+            updated.pots = [...(updated.pots ?? []), { pot_id, seed, placed_at: now, planted_at: now }];
             return updated;
           });
           setFarmItems(prev => [
             ...prev,
-            { user_id: myId, item_type: 'plant', item_name: seed, pot_id, placed_at: now },
+            { user_id: myId, item_type: 'plant', item_name: seed, pot_id, placed_at: now, planted_at: now },
           ]);
           flash(`🌱 Planted ${seed}!`);
         } else {
@@ -427,7 +433,7 @@ export default function FarmGame() {
           // synchronously — don't wait for React's async state cycle.
           const newPots = (farmStateRef.current?.pots ?? []).map(p =>
             normalizePotId(p.pot_id) === pot_id
-              ? { ...p, placed_at: r.new_placed_at }
+              ? { ...p, placed_at: r.new_placed_at }  // planted_at is preserved via spread
               : p
           );
           const newFarmState = {
@@ -442,15 +448,16 @@ export default function FarmGame() {
               : fi
           ));
 
-          // 1. Full farm reload via the existing cold-start bridge (keeps other pots in sync)
+          // 1. Full farm reload — sends complete updated state so all pots stay in sync.
           if (window.loadFarmState) {
             window.loadFarmState(JSON.stringify({
               farm_owner_id: theirId,
               is_owner:      true,
               pots: newPots.map(p => ({
-                pot_id:       normalizePotId(p.pot_id),
-                seed:         toGodotName(p.seed),
-                elapsed_time: Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
+                pot_id:            normalizePotId(p.pot_id),
+                seed:              toGodotName(p.seed),
+                elapsed_time:      Math.max(0, Math.floor((Date.now() - (p.placed_at  ?? 0)) / 1000)),
+                planted_timestamp: Math.floor((p.planted_at ?? p.placed_at ?? Date.now()) / 1000),
               })),
               animals: (newFarmState.animals ?? []).map(a => ({
                 animal:       toGodotName(a.animal),
@@ -461,18 +468,15 @@ export default function FarmGame() {
             }));
           }
 
-          // 2. Send a targeted FERTILIZE_UPDATE so Godot can refresh just the
-          //    affected pot's timer without needing to rebuild the whole farm.
-          //    Godot listens for window messages with type = "FERTILIZE_UPDATE".
+          // 2. Targeted single-pot update via Godot-exposed JS function.
+          //    window.updateFertilizedPot is set up by GDScript via JavaScriptBridge.
           const fertilizedPot = newPots.find(p => normalizePotId(p.pot_id) === pot_id);
-          if (fertilizedPot) {
-            window.postMessage({
-              type:         'FERTILIZE_UPDATE',
-              pot_id:       pot_id,
-              seed:         toGodotName(fertilizedPot.seed),
-              elapsed_time: Math.max(0, Math.floor((Date.now() - (fertilizedPot.placed_at ?? 0)) / 1000)),
-              skipped_seconds: 43200,
-            }, '*');
+          if (fertilizedPot && window.updateFertilizedPot) {
+            window.updateFertilizedPot(
+              pot_id,
+              Math.max(0, Math.floor((Date.now() - (fertilizedPot.placed_at ?? 0)) / 1000)),
+              Math.floor((fertilizedPot.planted_at ?? fertilizedPot.placed_at ?? Date.now()) / 1000)
+            );
           }
           setFertAnimKey(k => k + 1);   // trigger canvas pop animation
           flash('⏰ +12h growth applied!');
@@ -506,9 +510,10 @@ export default function FarmGame() {
       farm_owner_id: viewedUserId,
       is_owner:      (currentUser.id === viewedUserId),  // Godot uses this to disable visitor interactions
       pots: (farmState.pots ?? []).map(p => ({
-        pot_id:       normalizePotId(p.pot_id),
-        seed:         toGodotName(p.seed),
-        elapsed_time: Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
+        pot_id:            normalizePotId(p.pot_id),
+        seed:              toGodotName(p.seed),
+        elapsed_time:      Math.max(0, Math.floor((Date.now() - (p.placed_at  ?? 0)) / 1000)),
+        planted_timestamp: Math.floor((p.planted_at ?? p.placed_at ?? Date.now()) / 1000),
       })),
       animals: (farmState.animals ?? []).map(a => ({
         animal:       toGodotName(a.animal),
@@ -999,7 +1004,9 @@ function VisitorFarmInfo({ farmItems, shopCfg }) {
               <p style={sectionLabel}>🌿 Plants</p>
               <div className="fg-inv-grid fg-stagger">
                 {plants.map(item => {
-                  const rawTs    = Number(item.placed_at ?? 0);
+                  // Use planted_at (original, immutable) for the display date.
+                  // Fallback to placed_at for legacy rows without planted_at.
+                  const rawTs    = Number(item.planted_at ?? item.placed_at ?? 0);
                   const placedMs = rawTs > 0 && rawTs < 1e11 ? rawTs * 1000 : rawTs;
                   const dateStr  = placedMs > 0
                     ? new Date(placedMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })

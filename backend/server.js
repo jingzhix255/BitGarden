@@ -38,6 +38,19 @@ const db = createClient({
   authToken: process.env.TURSO_AUTH_TOKEN    || undefined,
 });
 
+// ─── Schema migration: add planted_at to farm_items ─────────────────────────
+// planted_at = original planting timestamp (ms). Never modified by fertilize.
+// placed_at  = fertilize-adjusted anchor used for elapsed_time calculation.
+(async () => {
+  try {
+    await db.execute('ALTER TABLE farm_items ADD COLUMN planted_at INTEGER');
+    // Backfill existing rows: use placed_at as the best available approximation.
+    await db.execute('UPDATE farm_items SET planted_at = placed_at WHERE planted_at IS NULL');
+  } catch (_) {
+    // Column already exists — normal on subsequent startups.
+  }
+})();
+
 // ─── Async helpers ──────────────────────────────────────────────────────────
 
 async function getInventoryMap(userId) {
@@ -64,7 +77,12 @@ async function syncFarmState(userId) {
   const state = {
     pots: rows
       .filter(r => r.item_type === 'plant')
-      .map(r => ({ pot_id: r.pot_id, seed: r.item_name, placed_at: Number(r.placed_at) })),
+      .map(r => ({
+        pot_id:     r.pot_id,
+        seed:       r.item_name,
+        placed_at:  Number(r.placed_at),
+        planted_at: Number(r.planted_at || r.placed_at),  // original planting time
+      })),
     animals: rows
       .filter(r => r.item_type === 'animal')
       .map(r => ({ animal: r.item_name, x: Number(r.home_x), y: Number(r.home_y), placed_at: Number(r.placed_at) })),
@@ -403,9 +421,10 @@ app.post('/api/farm/plant-seed', async (req, res) => {
   if (occupied.length > 0) return res.status(400).json({ error: `Pot ${normPotId} is already occupied.` });
 
   await adjustInventory(userId, seed, -1);
+  const nowMs = Date.now();
   await db.execute({
-    sql: 'INSERT INTO farm_items (user_id, item_type, item_name, pot_id, placed_at) VALUES (?, ?, ?, ?, ?)',
-    args: [userId, 'plant', seed, normPotId, Date.now()],
+    sql: 'INSERT INTO farm_items (user_id, item_type, item_name, pot_id, placed_at, planted_at) VALUES (?, ?, ?, ?, ?, ?)',
+    args: [userId, 'plant', seed, normPotId, nowMs, nowMs],
   });
   await syncFarmState(userId);
 
