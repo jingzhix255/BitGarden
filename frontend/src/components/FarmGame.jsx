@@ -442,8 +442,7 @@ export default function FarmGame() {
               : fi
           ));
 
-          // Push fresh elapsed_time directly to Godot without waiting for
-          // the bridge useEffect (which only fires after the next render tick).
+          // 1. Full farm reload via the existing cold-start bridge (keeps other pots in sync)
           if (window.loadFarmState) {
             window.loadFarmState(JSON.stringify({
               farm_owner_id: theirId,
@@ -460,6 +459,20 @@ export default function FarmGame() {
                 elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
               })),
             }));
+          }
+
+          // 2. Send a targeted FERTILIZE_UPDATE so Godot can refresh just the
+          //    affected pot's timer without needing to rebuild the whole farm.
+          //    Godot listens for window messages with type = "FERTILIZE_UPDATE".
+          const fertilizedPot = newPots.find(p => normalizePotId(p.pot_id) === pot_id);
+          if (fertilizedPot) {
+            window.postMessage({
+              type:         'FERTILIZE_UPDATE',
+              pot_id:       pot_id,
+              seed:         toGodotName(fertilizedPot.seed),
+              elapsed_time: Math.max(0, Math.floor((Date.now() - (fertilizedPot.placed_at ?? 0)) / 1000)),
+              skipped_seconds: 43200,
+            }, '*');
           }
           setFertAnimKey(k => k + 1);   // trigger canvas pop animation
           flash('⏰ +12h growth applied!');
