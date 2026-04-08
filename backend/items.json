@@ -1,8 +1,6 @@
 {
   "_comment": "Source of truth for purchasable items. Costs/emojis live here; Godot controls which items exist (sent via GODOT_READY handshake). Items present here but absent from Godot are harmless; items Godot sends but absent here get a default cost of 5 coins.",
   "seeds": [
-    { "id": "corn_seeds",        "name": "Corn",        "emoji": "🌽", "cost": 2,  "sell_value": 3,  "growth_seconds": 60,  "crop": "corn"        },
-    { "id": "carrot_seeds",      "name": "Carrot",      "emoji": "🥕", "cost": 2,  "sell_value": 4,  "growth_seconds": 90,  "crop": "carrot"      },
     { "id": "cabbage_seeds",     "name": "Cabbage",     "emoji": "🥬", "cost": 2,  "sell_value": 4,  "growth_seconds": 90,  "crop": "cabbage"     },
     { "id": "tomato_seeds",      "name": "Tomato",      "emoji": "🍅", "cost": 3,  "sell_value": 5,  "growth_seconds": 120, "crop": "tomato"      },
     { "id": "broccoli_seeds",    "name": "Broccoli",    "emoji": "🥦", "cost": 3,  "sell_value": 5,  "growth_seconds": 120, "crop": "broccoli"    },

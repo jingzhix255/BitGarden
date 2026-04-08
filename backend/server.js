@@ -145,7 +145,7 @@ app.get('/api/auth/me', async (req, res) => {
       try {
         const tx = await db.transaction('write');
         const r = await tx.execute({
-          sql: 'INSERT INTO users (username, coins, fertilizer, profile_image) VALUES (?, 5, 5, ?)',
+          sql: 'INSERT INTO users (username, coins, fertilizer, profile_image) VALUES (?, 5, 3, ?)',
           args: [username, profileImage],
         });
         await tx.commit();
