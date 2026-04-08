@@ -552,46 +552,27 @@ export default function FarmGame() {
     loadFarm();
   }, [viewedUserId, loadFarm]);
 
-  // ── Load Godot engine inline (no iframe — nginx blocks iframes with X-Frame-Options: DENY) ──
-  // The script is loaded at most ONCE per page session. On component remount
-  // (e.g. navigating to Neighborhood and back) the existing Engine globals and
-  // canvas are reused — re-appending the script would cause
-  // "Identifier 'Features' has already been declared" because index.js uses
-  // top-level const declarations.
+  // ── Load Godot engine inline ─────────────────────────────────────────────
+  // index.js declares top-level `const` globals (Features, Engine, …).
+  // Loading it twice crashes with "Identifier already declared". The script
+  // stays in the DOM for the lifetime of the tab. On remount we skip the
+  // script load and create a fresh Engine instance on the new canvas — Godot
+  // re-sends GODOT_READY so the normal bridge flow fires automatically.
   useEffect(() => {
-    // If Engine already exists globally (script was loaded in a prior mount),
-    // just reuse it — don't load the script again.
-    if (godotEngineRef.current || window.__godotEngine) {
-      if (window.__godotEngine && !godotEngineRef.current) {
-        godotEngineRef.current = window.__godotEngine;
-      }
-      setLoadProgress(100);
-      setGodotLoading(false);
-      return;
-    }
+    const canvas    = document.getElementById('godot-canvas');
+    const container = godotContainerRef.current;
 
-    // Guard against script tag already in DOM (e.g. React StrictMode double-mount)
-    if (document.querySelector('script[src="/farm_build/index.js"]')) {
-      return;
-    }
+    const syncSize = () => {
+      if (!container || !canvas) return;
+      const { width, height } = container.getBoundingClientRect();
+      canvas.width  = Math.floor(width);
+      canvas.height = Math.floor(height);
+    };
+    syncSize();
+    const ro = new ResizeObserver(syncSize);
+    if (container) ro.observe(container);
 
-    const script = document.createElement('script');
-    script.src = '/farm_build/index.js';
-    script.async = true;
-    script.onload = () => {
-      const canvas    = document.getElementById('godot-canvas');
-      const container = godotContainerRef.current;
-
-      const syncSize = () => {
-        if (!container || !canvas) return;
-        const { width, height } = container.getBoundingClientRect();
-        canvas.width  = Math.floor(width);
-        canvas.height = Math.floor(height);
-      };
-      syncSize();
-      const ro = new ResizeObserver(syncSize);
-      if (container) ro.observe(container);
-
+    const bootEngine = () => {
       const GODOT_CONFIG = {
         args: [],
         canvasResizePolicy: 0,
@@ -608,7 +589,6 @@ export default function FarmGame() {
       // eslint-disable-next-line no-undef
       const engine = new Engine(GODOT_CONFIG);
       godotEngineRef.current = engine;
-      window.__godotEngine = engine;  // persist across remounts
 
       engine.startGame({
         onProgress: (current, total) => {
@@ -622,8 +602,22 @@ export default function FarmGame() {
         setGodotLoading(false);
       });
     };
+
+    // If Engine class already exists (script loaded in a prior mount), boot directly.
+    if (typeof Engine !== 'undefined') {
+      bootEngine();
+      return () => ro.disconnect();
+    }
+
+    // First-ever page load — inject the script once.
+    const script = document.createElement('script');
+    script.src = '/farm_build/index.js';
+    script.async = true;
+    script.onload = bootEngine;
     document.head.appendChild(script);
-    // Intentionally NOT removing the script on unmount — Godot's globals must persist.
+
+    return () => ro.disconnect();
+    // Script tag intentionally stays in DOM forever — Godot globals must persist.
   }, []);
 
   // ── Shop ──────────────────────────────────────────────────────────────────
