@@ -553,8 +553,27 @@ export default function FarmGame() {
   }, [viewedUserId, loadFarm]);
 
   // ── Load Godot engine inline (no iframe — nginx blocks iframes with X-Frame-Options: DENY) ──
+  // The script is loaded at most ONCE per page session. On component remount
+  // (e.g. navigating to Neighborhood and back) the existing Engine globals and
+  // canvas are reused — re-appending the script would cause
+  // "Identifier 'Features' has already been declared" because index.js uses
+  // top-level const declarations.
   useEffect(() => {
-    if (godotEngineRef.current) return; // already loaded
+    // If Engine already exists globally (script was loaded in a prior mount),
+    // just reuse it — don't load the script again.
+    if (godotEngineRef.current || window.__godotEngine) {
+      if (window.__godotEngine && !godotEngineRef.current) {
+        godotEngineRef.current = window.__godotEngine;
+      }
+      setLoadProgress(100);
+      setGodotLoading(false);
+      return;
+    }
+
+    // Guard against script tag already in DOM (e.g. React StrictMode double-mount)
+    if (document.querySelector('script[src="/farm_build/index.js"]')) {
+      return;
+    }
 
     const script = document.createElement('script');
     script.src = '/farm_build/index.js';
@@ -563,8 +582,6 @@ export default function FarmGame() {
       const canvas    = document.getElementById('godot-canvas');
       const container = godotContainerRef.current;
 
-      // Size the canvas to its container before Godot initialises so
-      // canvasResizePolicy:2 has a correct starting size to expand from.
       const syncSize = () => {
         if (!container || !canvas) return;
         const { width, height } = container.getBoundingClientRect();
@@ -577,8 +594,6 @@ export default function FarmGame() {
 
       const GODOT_CONFIG = {
         args: [],
-        // 0 = no auto-resize; we manage dimensions manually via ResizeObserver
-        // so the canvas stays pinned to the container, not the full viewport.
         canvasResizePolicy: 0,
         emscriptenPoolSize: 8,
         ensureCrossOriginIsolationHeaders: false,
@@ -593,6 +608,7 @@ export default function FarmGame() {
       // eslint-disable-next-line no-undef
       const engine = new Engine(GODOT_CONFIG);
       godotEngineRef.current = engine;
+      window.__godotEngine = engine;  // persist across remounts
 
       engine.startGame({
         onProgress: (current, total) => {
@@ -607,11 +623,7 @@ export default function FarmGame() {
       });
     };
     document.head.appendChild(script);
-
-    return () => {
-      // Clean up the script tag if component unmounts before load
-      if (script.parentNode) script.parentNode.removeChild(script);
-    };
+    // Intentionally NOT removing the script on unmount — Godot's globals must persist.
   }, []);
 
   // ── Shop ──────────────────────────────────────────────────────────────────
