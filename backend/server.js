@@ -38,17 +38,11 @@ const db = createClient({
   authToken: process.env.TURSO_AUTH_TOKEN    || undefined,
 });
 
-// ─── Schema migration: add planted_at to farm_items ─────────────────────────
-// planted_at = original planting timestamp (ms). Never modified by fertilize.
-// placed_at  = fertilize-adjusted anchor used for elapsed_time calculation.
+// ─── Schema migration ────────────────────────────────────────────────────────
 (async () => {
-  try {
-    await db.execute('ALTER TABLE farm_items ADD COLUMN planted_at INTEGER');
-    // Backfill existing rows: use placed_at as the best available approximation.
-    await db.execute('UPDATE farm_items SET planted_at = placed_at WHERE planted_at IS NULL');
-  } catch (_) {
-    // Column already exists — normal on subsequent startups.
-  }
+  // fertilize_count: how many times a plant has been fertilized (each = +1 stage)
+  try { await db.execute('ALTER TABLE farm_items ADD COLUMN fertilize_count INTEGER DEFAULT 0'); } catch (_) {}
+  try { await db.execute('UPDATE farm_items SET fertilize_count = 0 WHERE fertilize_count IS NULL'); } catch (_) {}
 })();
 
 // ─── Async helpers ──────────────────────────────────────────────────────────
@@ -78,10 +72,10 @@ async function syncFarmState(userId) {
     pots: rows
       .filter(r => r.item_type === 'plant')
       .map(r => ({
-        pot_id:     r.pot_id,
-        seed:       r.item_name,
-        placed_at:  Number(r.placed_at),
-        planted_at: Number(r.planted_at || r.placed_at),  // original planting time
+        pot_id:          r.pot_id,
+        seed:            r.item_name,
+        placed_at:       Number(r.placed_at),
+        fertilize_count: Number(r.fertilize_count ?? 0),
       })),
     animals: rows
       .filter(r => r.item_type === 'animal')
@@ -599,25 +593,16 @@ app.post('/api/farm/fertilize', async (req, res) => {
       return res.status(403).json({ error: 'Action blocked: you do not own the farm you are trying to modify.' });
     }
 
-    const skipMs = Math.floor(Number(SHOP_CONFIG.fertilizer_skip_seconds ?? 1800) * 1000);
-
     const tx = await db.transaction('write');
     try {
       await tx.execute({
         sql: 'UPDATE users SET fertilizer = fertilizer - 1 WHERE id = ?',
         args: [userId],
       });
-
-      const newPlacedAt = Number(item.placed_at) - skipMs;
-      const plantResult = await tx.execute({
-        sql: 'UPDATE farm_items SET placed_at = ? WHERE id = ?',
-        args: [newPlacedAt, item.id],
+      await tx.execute({
+        sql: 'UPDATE farm_items SET fertilize_count = COALESCE(fertilize_count, 0) + 1 WHERE id = ?',
+        args: [item.id],
       });
-
-      if (plantResult.rowsAffected === 0) {
-        throw new Error(`Plant update affected 0 rows (item.id=${item.id}) — rolled back`);
-      }
-
       await tx.commit();
     } catch (txError) {
       await tx.rollback();
@@ -628,14 +613,12 @@ app.post('/api/farm/fertilize', async (req, res) => {
     await syncFarmState(userId);
 
     const updatedItem = (await db.execute({ sql: 'SELECT * FROM farm_items WHERE id = ?', args: [item.id] })).rows[0];
-    const updatedUser = await getUser(userId);
 
     res.json({
-      success:       true,
-      user:          updatedUser,
-      new_placed_at: Number(updatedItem.placed_at),
-      skipped_ms:    skipMs,
-      inventory:     await getInventoryMap(userId),
+      success:         true,
+      user:            await getUser(userId),
+      fertilize_count: Number(updatedItem.fertilize_count ?? 0),
+      inventory:       await getInventoryMap(userId),
     });
   } catch (error) {
     console.error('Fertilize Error:', error);
