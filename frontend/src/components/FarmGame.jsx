@@ -51,6 +51,20 @@ function toGodotName(raw) {
     .join(' ');
 }
 
+// ─── Persistent Godot canvas ──────────────────────────────────────────────────
+// Created once, never destroyed by React.  On mount we just parent it into the
+// current container div so the engine keeps rendering to the *same* WebGL context.
+let __godotCanvas = null;
+function getGodotCanvas() {
+  if (!__godotCanvas) {
+    __godotCanvas = document.createElement('canvas');
+    __godotCanvas.id = 'godot-canvas';
+    __godotCanvas.style.cssText =
+      'position:absolute;top:0;left:0;width:100%;height:100%;display:block;border:none;';
+  }
+  return __godotCanvas;
+}
+
 /**
  * Normalise a pot identifier to the "potN" string format Godot expects.
  *   0        → "pot0"
@@ -506,42 +520,21 @@ export default function FarmGame() {
   }, [viewedUserId, loadFarm]);
 
   // ── Load Godot engine inline ─────────────────────────────────────────────
-  // index.js uses top-level `const` — loading it twice crashes. The script
-  // stays in DOM for the tab's lifetime. On remount we move the existing
-  // canvas into the new container instead of re-booting the engine.
+  // The canvas lives OUTSIDE of React (see getGodotCanvas()) so it is never
+  // destroyed on unmount.  On every mount we just parent it into the current
+  // container div — the engine keeps its WebGL context.
   useEffect(() => {
     const container = godotContainerRef.current;
     if (!container) return;
 
-    // ── REMOUNT PATH: engine already running from a prior mount ──────────
-    // Grab the original canvas (still in the detached DOM), move it into
-    // this mount's container, and resize. No WASM reload needed.
-    const existingCanvas = document.getElementById('godot-canvas');
-    if (window.__godotEngine && existingCanvas) {
-      godotEngineRef.current = window.__godotEngine;
-      // Move the canvas into the new container if it's not already there
-      if (existingCanvas.parentNode !== container) {
-        container.insertBefore(existingCanvas, container.firstChild);
-      }
-      const syncSize = () => {
-        const { width, height } = container.getBoundingClientRect();
-        existingCanvas.width  = Math.floor(width);
-        existingCanvas.height = Math.floor(height);
-      };
-      syncSize();
-      const ro = new ResizeObserver(syncSize);
-      ro.observe(container);
-      setLoadProgress(100);
-      setGodotLoading(false);
-      // Mark Godot as ready so the bridge effect pushes farm state
-      setIsGodotReady(true);
-      return () => ro.disconnect();
+    const canvas = getGodotCanvas();
+
+    // Always parent the persistent canvas into the current container
+    if (canvas.parentNode !== container) {
+      container.insertBefore(canvas, container.firstChild);
     }
 
-    // ── FIRST LOAD: inject the script and boot the engine ────────────────
-    const canvas = document.getElementById('godot-canvas');
     const syncSize = () => {
-      if (!container || !canvas) return;
       const { width, height } = container.getBoundingClientRect();
       canvas.width  = Math.floor(width);
       canvas.height = Math.floor(height);
@@ -550,6 +543,16 @@ export default function FarmGame() {
     const ro = new ResizeObserver(syncSize);
     ro.observe(container);
 
+    // ── REMOUNT PATH: engine already running from a prior mount ──────────
+    if (window.__godotEngine) {
+      godotEngineRef.current = window.__godotEngine;
+      setLoadProgress(100);
+      setGodotLoading(false);
+      setIsGodotReady(true);
+      return () => ro.disconnect();
+    }
+
+    // ── FIRST LOAD: inject the script and boot the engine ────────────────
     const bootEngine = () => {
       const GODOT_CONFIG = {
         args: [],
@@ -582,7 +585,6 @@ export default function FarmGame() {
       });
     };
 
-    // Guard: script already in DOM (shouldn't happen but safety check)
     if (document.querySelector('script[src="/farm_build/index.js"]')) {
       if (typeof Engine !== 'undefined') bootEngine();
       return () => ro.disconnect();
@@ -688,10 +690,6 @@ export default function FarmGame() {
 
         {/* ── CENTER: Godot canvas (inline — no iframe, nginx blocks iframes) ── */}
         <div ref={godotContainerRef} style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#242424' }}>
-          <canvas
-            id="godot-canvas"
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'block', border: 'none' }}
-          />
           {/* ── Loading screen overlay ── */}
           {godotLoading && (
             <div className="fg-loading-overlay" style={{ opacity: loadProgress >= 100 ? 0 : 1, transition: 'opacity 0.4s ease-out' }}>
