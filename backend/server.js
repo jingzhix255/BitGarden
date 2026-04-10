@@ -117,40 +117,65 @@ function parseAlbOidcJwt(token) {
 app.get('/api/auth/me', async (req, res) => {
   try {
     const oidcData = req.headers['x-amzn-oidc-data'];
-    let rawUsername = null;
+    let newName = null;   // "Jingzhi X." format
+    let oldName = null;   // "Jingzhi" format (pre-migration)
     if (oidcData) {
       const claims = parseAlbOidcJwt(oidcData);
       if (claims) {
         const email = claims.preferred_username || claims.email || '';
         const emailPrefix = email.includes('@') ? email.split('@')[0] : email;
-        const firstName  = claims.given_name || emailPrefix || claims.sub;
+        const firstName = claims.given_name || emailPrefix || claims.sub;
         const lastInitial = claims.family_name
           ? claims.family_name.trim().charAt(0).toUpperCase() + '.'
           : '';
-        rawUsername = lastInitial ? `${firstName} ${lastInitial}` : firstName;
+        newName = lastInitial ? `${firstName} ${lastInitial}` : firstName;
+        oldName = firstName;
       }
     }
 
     const isLocal = req.hostname === 'localhost' || req.hostname === '127.0.0.1';
-    rawUsername = rawUsername || (isLocal ? 'LocalDevUser' : null);
+    if (!newName) {
+      newName = isLocal ? 'LocalDevUser' : null;
+      oldName = newName;
+    }
 
-    if (!rawUsername) {
+    if (!newName) {
       return res.status(401).json({ error: 'Unauthenticated: no identity header present.' });
     }
 
-    const username = rawUsername.trim();
-    let user = await getUserByName(username);
+    // Migration-safe lookup: handles both pre- and post-rename accounts,
+    // and cleans up empty duplicates created by the buggy deploy.
+    const userNew = await getUserByName(newName.trim());
+    const userOld = (oldName && oldName !== newName) ? await getUserByName(oldName.trim()) : null;
+
+    let user = null;
+    if (userOld && userNew) {
+      // Both exist — old account is the real one (has farm data).
+      // Delete the empty duplicate, then rename the real account.
+      await db.execute({ sql: 'DELETE FROM farm_items WHERE user_id = ?', args: [userNew.id] });
+      await db.execute({ sql: 'DELETE FROM inventory WHERE user_id = ?',  args: [userNew.id] });
+      await db.execute({ sql: 'DELETE FROM kudos WHERE receiver_id = ?',  args: [userNew.id] });
+      await db.execute({ sql: 'DELETE FROM users WHERE id = ?',           args: [userNew.id] });
+      await db.execute({ sql: 'UPDATE users SET username = ? WHERE id = ?', args: [newName.trim(), userOld.id] });
+      user = await getUser(userOld.id);
+    } else if (userOld) {
+      // Only old-format exists — rename it
+      await db.execute({ sql: 'UPDATE users SET username = ? WHERE id = ?', args: [newName.trim(), userOld.id] });
+      user = await getUser(userOld.id);
+    } else if (userNew) {
+      user = userNew;
+    }
 
     let isNewUser = false;
     if (!user) {
       isNewUser = true;
       const profileImage =
-        `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(username)}`;
+        `https://api.dicebear.com/9.x/notionists/svg?seed=${encodeURIComponent(newName.trim())}`;
       try {
         const tx = await db.transaction('write');
         const r = await tx.execute({
           sql: 'INSERT INTO users (username, coins, fertilizer, profile_image) VALUES (?, 5, 3, ?)',
-          args: [username, profileImage],
+          args: [newName.trim(), profileImage],
         });
         await tx.commit();
         user = await getUser(Number(r.lastInsertRowid));
