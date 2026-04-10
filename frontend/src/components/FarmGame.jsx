@@ -462,20 +462,40 @@ export default function FarmGame() {
   }, [currentUser.id, viewedUserId]);  // viewedUserId ensures re-register on every farm change
 
   // ── Bridge effect: send farm state to Godot (with retry) ─────────────────
-  // GODOT_READY fires while Godot's JS bridge is still initialising, so
-  // loadFarmState() may not exist on contentWindow yet.  Poll every 100 ms
-  // until it appears (max 20 attempts = 2 s), then send and stop.
+  // viewedUserId is in deps so the effect re-fires on every farm navigation,
+  // even if isGodotReady was already true and farmState already had data.
   useEffect(() => {
     if (!isGodotReady || !farmState) return;
 
+    const sendPayload = (payload) => {
+      const jsonString = JSON.stringify(payload);
+      let attempts = 0;
+      const MAX_ATTEMPTS = 20;
+      const attemptLoad = () => {
+        if (window.loadFarmState) { window.loadFarmState(jsonString); return; }
+        attempts += 1;
+        if (attempts < MAX_ATTEMPTS) setTimeout(attemptLoad, 100);
+      };
+      attemptLoad();
+    };
+
+    // When the viewed user changes, clear Godot's farm before loading the new
+    // one — otherwise the persistent engine keeps showing the previous farm.
+    if (window.__godotLoadedUserId !== undefined &&
+        window.__godotLoadedUserId !== viewedUserId) {
+      sendPayload({
+        farm_owner_id: viewedUserId,
+        is_owner: false,
+        pots: [],
+        animals: [],
+      });
+    }
+    window.__godotLoadedUserId = viewedUserId;
+
     // Build the strict payload Godot's GDScript parser expects.
-    // elapsed_time is computed HERE (not in loadFarm) so retries always send
-    // a fresh value and we never send a stale "0" on first attempt.
-    // farm_owner_id is stamped in so every postMessage from Godot can be
-    // cross-checked against who we are actually viewing right now.
     const strictPayload = {
       farm_owner_id: viewedUserId,
-      is_owner:      (currentUser.id === viewedUserId),  // Godot uses this to disable visitor interactions
+      is_owner:      (currentUser.id === viewedUserId),
       pots: (farmState.pots ?? []).map(p => ({
         pot_id:          normalizePotId(p.pot_id),
         seed:            toGodotName(p.seed),
@@ -489,25 +509,8 @@ export default function FarmGame() {
         elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
       })),
     };
-    const jsonString = JSON.stringify(strictPayload);
-
-    let attempts = 0;
-    const MAX_ATTEMPTS = 20;
-
-    const attemptLoad = () => {
-      if (window.loadFarmState) {
-        window.loadFarmState(jsonString);
-        return;
-      }
-
-      attempts += 1;
-      if (attempts >= MAX_ATTEMPTS) return;
-
-      setTimeout(attemptLoad, 100);
-    };
-
-    attemptLoad();
-  }, [isGodotReady, farmState]);
+    sendPayload(strictPayload);
+  }, [isGodotReady, farmState, viewedUserId]);
 
   // ── Reload farm whenever the viewed profile changes ───────────────────────
   // Covers /garden/2 → /garden/3 navigation: same component, new URL param.
