@@ -466,12 +466,14 @@ export default function FarmGame() {
   // even if isGodotReady was already true and farmState already had data.
   useEffect(() => {
     if (!isGodotReady || !farmState) return;
+    let cancelled = false;
 
     const sendPayload = (payload) => {
       const jsonString = JSON.stringify(payload);
       let attempts = 0;
       const MAX_ATTEMPTS = 20;
       const attemptLoad = () => {
+        if (cancelled) return;
         if (window.loadFarmState) { window.loadFarmState(jsonString); return; }
         attempts += 1;
         if (attempts < MAX_ATTEMPTS) setTimeout(attemptLoad, 100);
@@ -479,20 +481,10 @@ export default function FarmGame() {
       attemptLoad();
     };
 
-    // When the viewed user changes, clear Godot's farm before loading the new
-    // one — otherwise the persistent engine keeps showing the previous farm.
-    if (window.__godotLoadedUserId !== undefined &&
-        window.__godotLoadedUserId !== viewedUserId) {
-      sendPayload({
-        farm_owner_id: viewedUserId,
-        is_owner: false,
-        pots: [],
-        animals: [],
-      });
-    }
+    const needsClear = window.__godotLoadedUserId !== undefined &&
+                       window.__godotLoadedUserId !== viewedUserId;
     window.__godotLoadedUserId = viewedUserId;
 
-    // Build the strict payload Godot's GDScript parser expects.
     const strictPayload = {
       farm_owner_id: viewedUserId,
       is_owner:      (currentUser.id === viewedUserId),
@@ -509,7 +501,17 @@ export default function FarmGame() {
         elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
       })),
     };
-    sendPayload(strictPayload);
+
+    if (needsClear) {
+      // Clear Godot's scene first, then load the real data after a tick
+      // so the engine has time to process the reset.
+      sendPayload({ farm_owner_id: viewedUserId, is_owner: false, pots: [], animals: [] });
+      setTimeout(() => { if (!cancelled) sendPayload(strictPayload); }, 150);
+    } else {
+      sendPayload(strictPayload);
+    }
+
+    return () => { cancelled = true; };
   }, [isGodotReady, farmState, viewedUserId]);
 
   // ── Reload farm whenever the viewed profile changes ───────────────────────
