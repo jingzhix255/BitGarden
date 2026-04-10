@@ -562,6 +562,11 @@ export default function FarmGame() {
     // ── REMOUNT PATH: engine already running from a prior mount ──────────
     if (window.__godotEngine) {
       godotEngineRef.current = window.__godotEngine;
+      // isGodotReadyRef MUST be set here as well as via setIsGodotReady so
+      // loadFarm's synchronous ref-check succeeds on this mount.
+      // setIsGodotReady only updates state (async); the ref is what loadFarm
+      // actually reads to decide whether to push to Godot.
+      isGodotReadyRef.current = true;
       setLoadProgress(100);
       setGodotLoading(false);
       setIsGodotReady(true);
