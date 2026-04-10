@@ -123,7 +123,11 @@ app.get('/api/auth/me', async (req, res) => {
       if (claims) {
         const email = claims.preferred_username || claims.email || '';
         const emailPrefix = email.includes('@') ? email.split('@')[0] : email;
-        rawUsername = claims.given_name || emailPrefix || claims.sub;
+        const firstName  = claims.given_name || emailPrefix || claims.sub;
+        const lastInitial = claims.family_name
+          ? claims.family_name.trim().charAt(0).toUpperCase() + '.'
+          : '';
+        rawUsername = lastInitial ? `${firstName} ${lastInitial}` : firstName;
       }
     }
 
