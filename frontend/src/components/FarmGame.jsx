@@ -217,6 +217,10 @@ export default function FarmGame() {
       .catch(err => console.error('[FarmGame] Failed to load shop config:', err));
   }, []);
 
+  // ── Ref that always holds the latest loadFarm — lets the [] engine loading
+  // effect call the current version without adding loadFarm to its deps.
+  const loadFarmRef = useRef(null);
+
   // ── Fetch farm state for the viewed user → push to Godot ─────────────────
   const loadFarm = useCallback(async () => {
     try {
@@ -310,6 +314,7 @@ export default function FarmGame() {
       console.error('[FarmGame] loadFarm error:', err);
     }
   }, [viewedUserId, isOwner, currentUser.id]);
+  useEffect(() => { loadFarmRef.current = loadFarm; }, [loadFarm]);
 
   // ── Messages from Godot ───────────────────────────────────────────────────
   // IMPORTANT: viewedUserId is in the dep array so the listener is torn down
@@ -492,14 +497,12 @@ export default function FarmGame() {
   }, [currentUser.id, viewedUserId]);  // viewedUserId ensures re-register on every farm change
 
 
-  // ── Reload farm whenever the viewed profile changes ───────────────────────
-  // Covers /garden/2 → /garden/3 navigation: same component, new URL param.
-  // Godot stays loaded, we just fetch the new user's data and update farmState.
-  // The bridge useEffect above will send it to Godot once farmState updates.
-  // On first mount Godot isn't ready yet, so loadFarm just stores the data;
-  // it gets sent once GODOT_READY fires and sets isGodotReady = true.
+  // ── Reload farm on same-component param changes (/garden/3 → /garden/5) ──
+  // The engine loading effect handles the initial load on mount/remount.
+  // This effect only handles the case where React keeps the component mounted
+  // but the URL param changes (same <Route>, different userId).
   useEffect(() => {
-    loadFarm();
+    if (isGodotReadyRef.current) loadFarm();
   }, [viewedUserId, loadFarm]);
 
   // ── Load Godot engine inline ─────────────────────────────────────────────
@@ -537,6 +540,9 @@ export default function FarmGame() {
       setLoadProgress(100);
       setGodotLoading(false);
       setIsGodotReady(true);
+      // Canvas is parented and Godot is ready — safe to fetch and push.
+      // Uses the ref so we always get the latest loadFarm (correct viewedUserId).
+      if (loadFarmRef.current) loadFarmRef.current();
       return () => ro.disconnect();
     }
 
@@ -567,6 +573,10 @@ export default function FarmGame() {
       }).then(() => {
         setLoadProgress(100);
         setTimeout(() => setGodotLoading(false), 400);
+        // Engine just booted — fetch farm data and push to Godot.
+        // GODOT_READY will fire separately and set isGodotReadyRef;
+        // loadFarm's polling retries will wait for window.loadFarmState.
+        if (loadFarmRef.current) loadFarmRef.current();
       }).catch((err) => {
         console.error('[Godot] Failed to start:', err);
         setGodotLoading(false);
