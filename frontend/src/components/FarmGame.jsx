@@ -161,9 +161,6 @@ export default function FarmGame() {
   const [fertAnimKey, setFertAnimKey] = useState(0);
   // In-flight guard: prevents queuing multiple simultaneous fertilize calls
   const fertInFlightRef = useRef(false);
-  // Tracks the last __godotPushGen seen by the bridge effect so it skips
-  // when the direct push in loadFarm already fired for this data.
-  const bridgePushGenRef = useRef(-1);
 
   // ── Godot catalog (populated by GODOT_READY handshake) ──────────────────
   const [availablePlants,  setAvailablePlants]  = useState([]);
@@ -272,16 +269,13 @@ export default function FarmGame() {
       farmStateRef.current = newFarmState;
       setFarmState(newFarmState);
 
-      // Direct push — this is the primary path for every navigation.
-      // A generation counter prevents the bridge useEffect from also
-      // pushing the same data (which would double-spawn in Godot).
+      // ── Direct Godot push ────────────────────────────────────────────────
+      // Push directly here (not via the bridge useEffect) so the call is
+      // always tied to fresh data, regardless of React's render scheduling.
+      // The bridge useEffect handles the cold-start case (GODOT_READY fires
+      // before loadFarm completes); this handles every subsequent navigation.
       if (isGodotReadyRef.current && window.loadFarmState) {
-        const fmtD = (ms) => {
-          if (!ms || ms <= 0) return '';
-          const d = new Date(ms);
-          return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
-        };
-        const directPayload = {
+        const strictPayload = {
           farm_owner_id: viewedUserId,
           is_owner:      (currentUser.id === viewedUserId),
           pots: newFarmState.pots.map(p => ({
@@ -289,19 +283,17 @@ export default function FarmGame() {
             seed:            toGodotName(p.seed),
             elapsed_time:    Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
             fertilize_count: Number(p.fertilize_count ?? 0),
-            planted_date:    fmtD(p.placed_at),
           })),
           animals: newFarmState.animals.map(a => ({
             animal:       toGodotName(a.animal),
             x:            Number(a.x ?? 0),
             y:            Number(a.y ?? 0),
             elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
-            planted_date: fmtD(a.placed_at),
           })),
         };
         window.__godotLoadedUserId = viewedUserId;
-        window.__godotPushGen = (window.__godotPushGen ?? 0) + 1;
-        window.loadFarmState(JSON.stringify(directPayload));
+        window.__godotDirectPushAt = Date.now();
+        window.loadFarmState(JSON.stringify(strictPayload));
       }
     } catch (err) {
       console.error('[FarmGame] loadFarm error:', err);
@@ -488,62 +480,54 @@ export default function FarmGame() {
     return () => window.removeEventListener('message', onMessage);
   }, [currentUser.id, viewedUserId]);  // viewedUserId ensures re-register on every farm change
 
-  // ── Bridge effect: cold-start safety net ─────────────────────────────────
-  // Only fires when isGodotReady flips to true (first mount / GODOT_READY).
-  // loadFarm's direct push is the primary path for every navigation — this
-  // effect catches the one case where Godot wasn't ready when loadFarm ran.
-  // __godotPushGen prevents double-push: if the direct push already fired,
-  // this effect sees the same gen and skips.
+  // ── Bridge effect: cold-start push (GODOT_READY case) ────────────────────
+  // Handles the race where GODOT_READY fires AFTER loadFarm already stored
+  // data in farmStateRef — meaning loadFarm's direct push above never ran
+  // because isGodotReadyRef was false at that time.
+  // For every other navigation, loadFarm's direct push handles it instead.
   useEffect(() => {
     if (!isGodotReady || !farmStateRef.current) return;
-    // Direct push already handled this render — skip to prevent double-spawn
-    const gen = window.__godotPushGen ?? 0;
-    if (gen === bridgePushGenRef.current) return;
-    bridgePushGenRef.current = gen;
+    // Skip if the direct push in loadFarm already fired recently —
+    // calling loadFarmState twice in the same frame double-spawns items.
+    if (window.__godotDirectPushAt && (Date.now() - window.__godotDirectPushAt) < 2000) return;
 
-    let cancelled = false;
-    const fmtD = (ms) => {
-      if (!ms || ms <= 0) return '';
-      const d = new Date(ms);
-      return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
-    };
-    const fs = farmStateRef.current;
-    const payload = {
-      farm_owner_id: viewedUserId,
-      is_owner:      (currentUser.id === viewedUserId),
-      pots: (fs.pots ?? []).map(p => ({
-        pot_id:          normalizePotId(p.pot_id),
-        seed:            toGodotName(p.seed),
-        elapsed_time:    Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
-        fertilize_count: Number(p.fertilize_count ?? 0),
-        planted_date:    fmtD(p.placed_at),
-      })),
-      animals: (fs.animals ?? []).map(a => ({
-        animal:       toGodotName(a.animal),
-        x:            Number(a.x ?? 0),
-        y:            Number(a.y ?? 0),
-        elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
-        planted_date: fmtD(a.placed_at),
-      })),
-    };
-    const jsonString = JSON.stringify(payload);
-
+    // Poll until loadFarmState is available (Godot bridge may still be
+    // initialising its JavaScript exports when GODOT_READY fires).
     let attempts = 0;
     const MAX_ATTEMPTS = 20;
+    let cancelled = false;
+
     const attemptLoad = () => {
       if (cancelled) return;
       if (window.loadFarmState) {
+        const fs = farmStateRef.current;
+        const payload = {
+          farm_owner_id: viewedUserId,
+          is_owner:      (currentUser.id === viewedUserId),
+          pots: (fs.pots ?? []).map(p => ({
+            pot_id:          normalizePotId(p.pot_id),
+            seed:            toGodotName(p.seed),
+            elapsed_time:    Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
+            fertilize_count: Number(p.fertilize_count ?? 0),
+          })),
+          animals: (fs.animals ?? []).map(a => ({
+            animal:       toGodotName(a.animal),
+            x:            Number(a.x ?? 0),
+            y:            Number(a.y ?? 0),
+            elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
+          })),
+        };
         window.__godotLoadedUserId = viewedUserId;
-        window.loadFarmState(jsonString);
+        window.loadFarmState(JSON.stringify(payload));
         return;
       }
       attempts += 1;
       if (attempts < MAX_ATTEMPTS) setTimeout(attemptLoad, 100);
     };
-    attemptLoad();
 
+    attemptLoad();
     return () => { cancelled = true; };
-  }, [isGodotReady, farmState]);
+  }, [isGodotReady]);
 
   // ── Reload farm whenever the viewed profile changes ───────────────────────
   // Covers /garden/2 → /garden/3 navigation: same component, new URL param.
