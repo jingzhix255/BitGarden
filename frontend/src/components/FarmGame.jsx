@@ -268,32 +268,9 @@ export default function FarmGame() {
 
       farmStateRef.current = newFarmState;
       setFarmState(newFarmState);
-
-      // ── Direct Godot push ────────────────────────────────────────────────
-      // Push directly here (not via the bridge useEffect) so the call is
-      // always tied to fresh data, regardless of React's render scheduling.
-      // The bridge useEffect handles the cold-start case (GODOT_READY fires
-      // before loadFarm completes); this handles every subsequent navigation.
-      if (isGodotReadyRef.current && window.loadFarmState) {
-        const strictPayload = {
-          farm_owner_id: viewedUserId,
-          is_owner:      (currentUser.id === viewedUserId),
-          pots: newFarmState.pots.map(p => ({
-            pot_id:          normalizePotId(p.pot_id),
-            seed:            toGodotName(p.seed),
-            elapsed_time:    Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
-            fertilize_count: Number(p.fertilize_count ?? 0),
-          })),
-          animals: newFarmState.animals.map(a => ({
-            animal:       toGodotName(a.animal),
-            x:            Number(a.x ?? 0),
-            y:            Number(a.y ?? 0),
-            elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
-          })),
-        };
-        window.__godotLoadedUserId = viewedUserId;
-        window.loadFarmState(JSON.stringify(strictPayload));
-      }
+      // The bridge useEffect [isGodotReady, farmState] will pick this up
+      // and push to Godot. No direct push here — calling loadFarmState
+      // twice in the same frame causes Godot to double-spawn items.
     } catch (err) {
       console.error('[FarmGame] loadFarm error:', err);
     }
@@ -488,6 +465,12 @@ export default function FarmGame() {
     if (!isGodotReady || !farmState) return;
     let cancelled = false;
 
+    const fmtDate = (ms) => {
+      if (!ms || ms <= 0) return '';
+      const d = new Date(ms);
+      return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+    };
+
     const payload = {
       farm_owner_id: viewedUserId,
       is_owner:      (currentUser.id === viewedUserId),
@@ -496,12 +479,14 @@ export default function FarmGame() {
         seed:            toGodotName(p.seed),
         elapsed_time:    Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
         fertilize_count: Number(p.fertilize_count ?? 0),
+        planted_date:    fmtDate(p.placed_at),
       })),
       animals: (farmState.animals ?? []).map(a => ({
         animal:       toGodotName(a.animal),
         x:            Number(a.x ?? 0),
         y:            Number(a.y ?? 0),
         elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
+        planted_date: fmtDate(a.placed_at),
       })),
     };
     const jsonString = JSON.stringify(payload);
