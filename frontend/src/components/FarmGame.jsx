@@ -61,8 +61,25 @@ function getGodotCanvas() {
     __godotCanvas.id = 'godot-canvas';
     __godotCanvas.style.cssText =
       'position:absolute;top:0;left:0;width:100%;height:100%;display:block;border:none;';
+    getCanvasParking().appendChild(__godotCanvas);
   }
   return __godotCanvas;
+}
+
+// ─── Canvas parking ──────────────────────────────────────────────────────────
+// A hidden container on document.body that holds the canvas when FarmGame is
+// unmounted.  This prevents the canvas from being detached from the DOM, which
+// would corrupt Godot's WebGL context and JavaScriptBridge callbacks.
+let __godotCanvasParking = null;
+function getCanvasParking() {
+  if (!__godotCanvasParking) {
+    __godotCanvasParking = document.createElement('div');
+    __godotCanvasParking.id = 'godot-canvas-parking';
+    __godotCanvasParking.style.cssText =
+      'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;overflow:hidden;pointer-events:none;';
+    document.body.appendChild(__godotCanvasParking);
+  }
+  return __godotCanvasParking;
 }
 
 /**
@@ -217,11 +234,9 @@ export default function FarmGame() {
       .catch(err => console.error('[FarmGame] Failed to load shop config:', err));
   }, []);
 
-  // ── Ref that always holds the latest loadFarm — lets the [] engine loading
-  // effect call the current version without adding loadFarm to its deps.
-  const loadFarmRef = useRef(null);
-
-  // ── Fetch farm state for the viewed user → push to Godot ─────────────────
+  // ── Fetch farm state for the viewed user ────────────────────────────────
+  // loadFarm ONLY fetches data and updates React state.  The bridge useEffect
+  // below reacts to the farmState change and pushes the payload to Godot.
   const loadFarm = useCallback(async () => {
     try {
       const res  = await fetch(`/api/farm/${viewedUserId}`);
@@ -272,49 +287,10 @@ export default function FarmGame() {
 
       farmStateRef.current = newFarmState;
       setFarmState(newFarmState);
-
-      // ── Push to Godot with retry polling ────────────────────────────────
-      // Single path — no useEffect bridge. Polls for window.loadFarmState
-      // in case Godot's JS bridge isn't exported yet (cold start).
-      const fmtD = (ms) => {
-        if (!ms || ms <= 0) return '';
-        const d = new Date(ms);
-        return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
-      };
-      const godotPayload = JSON.stringify({
-        farm_owner_id: viewedUserId,
-        is_owner:      (currentUser.id === viewedUserId),
-        pots: newFarmState.pots.map(p => ({
-          pot_id:          normalizePotId(p.pot_id),
-          seed:            toGodotName(p.seed),
-          elapsed_time:    Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
-          fertilize_count: Number(p.fertilize_count ?? 0),
-          planted_date:    fmtD(p.placed_at),
-        })),
-        animals: newFarmState.animals.map(a => ({
-          animal:       toGodotName(a.animal),
-          x:            Number(a.x ?? 0),
-          y:            Number(a.y ?? 0),
-          elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
-          planted_date: fmtD(a.placed_at),
-        })),
-      });
-
-      let pushAttempts = 0;
-      const tryPush = () => {
-        if (window.loadFarmState) {
-          window.loadFarmState(godotPayload);
-          return;
-        }
-        pushAttempts++;
-        if (pushAttempts < 30) setTimeout(tryPush, 200);
-      };
-      tryPush();
     } catch (err) {
       console.error('[FarmGame] loadFarm error:', err);
     }
   }, [viewedUserId, isOwner, currentUser.id]);
-  useEffect(() => { loadFarmRef.current = loadFarm; }, [loadFarm]);
 
   // ── Messages from Godot ───────────────────────────────────────────────────
   // IMPORTANT: viewedUserId is in the dep array so the listener is torn down
@@ -532,18 +508,17 @@ export default function FarmGame() {
     // ── REMOUNT PATH: engine already running from a prior mount ──────────
     if (window.__godotEngine) {
       godotEngineRef.current = window.__godotEngine;
-      // isGodotReadyRef MUST be set here as well as via setIsGodotReady so
-      // loadFarm's synchronous ref-check succeeds on this mount.
-      // setIsGodotReady only updates state (async); the ref is what loadFarm
-      // actually reads to decide whether to push to Godot.
       isGodotReadyRef.current = true;
       setLoadProgress(100);
       setGodotLoading(false);
       setIsGodotReady(true);
-      // Canvas is parented and Godot is ready — safe to fetch and push.
-      // Uses the ref so we always get the latest loadFarm (correct viewedUserId).
-      if (loadFarmRef.current) loadFarmRef.current();
-      return () => ro.disconnect();
+      loadFarm();
+      return () => {
+        ro.disconnect();
+        const parking = getCanvasParking();
+        if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
+        parking.appendChild(canvas);
+      };
     }
 
     // ── FIRST LOAD: inject the script and boot the engine ────────────────
@@ -573,10 +548,7 @@ export default function FarmGame() {
       }).then(() => {
         setLoadProgress(100);
         setTimeout(() => setGodotLoading(false), 400);
-        // Engine just booted — fetch farm data and push to Godot.
-        // GODOT_READY will fire separately and set isGodotReadyRef;
-        // loadFarm's polling retries will wait for window.loadFarmState.
-        if (loadFarmRef.current) loadFarmRef.current();
+        loadFarm();
       }).catch((err) => {
         console.error('[Godot] Failed to start:', err);
         setGodotLoading(false);
@@ -585,7 +557,12 @@ export default function FarmGame() {
 
     if (document.querySelector('script[src="/farm_build/index.js"]')) {
       if (typeof Engine !== 'undefined') bootEngine();
-      return () => ro.disconnect();
+      return () => {
+        ro.disconnect();
+        const parking = getCanvasParking();
+        if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
+        parking.appendChild(canvas);
+      };
     }
 
     const script = document.createElement('script');
@@ -594,8 +571,52 @@ export default function FarmGame() {
     script.onload = bootEngine;
     document.head.appendChild(script);
 
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      const parking = getCanvasParking();
+      if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
+      parking.appendChild(canvas);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── Bridge: push farmState to Godot whenever it changes ─────────────────
+  // This is the ONLY path that calls window.loadFarmState.  loadFarm() just
+  // fetches data and calls setFarmState(); this effect reacts to that update
+  // and pushes the constructed payload to Godot.  On cold start, isGodotReady
+  // flips to true (via GODOT_READY message) AFTER farmState is already set,
+  // which triggers this effect.  On remount, isGodotReady is set synchronously
+  // in the engine loading effect, then loadFarm's setFarmState triggers this.
+  useEffect(() => {
+    if (!isGodotReady || !farmState || !window.loadFarmState) return;
+
+    const fmtD = (ms) => {
+      if (!ms || ms <= 0) return '';
+      const d = new Date(ms);
+      return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+    };
+
+    const payload = JSON.stringify({
+      farm_owner_id: viewedUserId,
+      is_owner: currentUser.id === viewedUserId,
+      pots: (farmState.pots ?? []).map(p => ({
+        pot_id:          normalizePotId(p.pot_id),
+        seed:            toGodotName(p.seed),
+        elapsed_time:    Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
+        fertilize_count: Number(p.fertilize_count ?? 0),
+        planted_date:    fmtD(p.placed_at),
+      })),
+      animals: (farmState.animals ?? []).map(a => ({
+        animal:       toGodotName(a.animal),
+        x:            Number(a.x ?? 0),
+        y:            Number(a.y ?? 0),
+        elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
+        planted_date: fmtD(a.placed_at),
+      })),
+    });
+
+    window.loadFarmState(payload);
+  }, [isGodotReady, farmState, viewedUserId, currentUser.id]);
 
   // ── Shop ──────────────────────────────────────────────────────────────────
   // Send item.name (display name) so it lands in inventory under the same key
