@@ -479,51 +479,49 @@ export default function FarmGame() {
     return () => window.removeEventListener('message', onMessage);
   }, [currentUser.id, viewedUserId]);  // viewedUserId ensures re-register on every farm change
 
-  // ── Bridge effect: cold-start push (GODOT_READY case) ────────────────────
-  // Handles the race where GODOT_READY fires AFTER loadFarm already stored
-  // data in farmStateRef — meaning loadFarm's direct push above never ran
-  // because isGodotReadyRef was false at that time.
-  // For every other navigation, loadFarm's direct push handles it instead.
+  // ── Bridge effect: push farm state to Godot whenever it changes ──────────
+  // Fires on EVERY farmState update AND when isGodotReady flips to true.
+  // This is the single reliable path — no race conditions, no refs to check.
+  // loadFarm also does a direct push as an optimistic fast-path, but this
+  // effect is the safety net that guarantees correctness.
   useEffect(() => {
-    if (!isGodotReady || !farmStateRef.current) return;
-
-    // Poll until loadFarmState is available (Godot bridge may still be
-    // initialising its JavaScript exports when GODOT_READY fires).
-    let attempts = 0;
-    const MAX_ATTEMPTS = 20;
+    if (!isGodotReady || !farmState) return;
     let cancelled = false;
 
+    const payload = {
+      farm_owner_id: viewedUserId,
+      is_owner:      (currentUser.id === viewedUserId),
+      pots: (farmState.pots ?? []).map(p => ({
+        pot_id:          normalizePotId(p.pot_id),
+        seed:            toGodotName(p.seed),
+        elapsed_time:    Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
+        fertilize_count: Number(p.fertilize_count ?? 0),
+      })),
+      animals: (farmState.animals ?? []).map(a => ({
+        animal:       toGodotName(a.animal),
+        x:            Number(a.x ?? 0),
+        y:            Number(a.y ?? 0),
+        elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
+      })),
+    };
+    const jsonString = JSON.stringify(payload);
+
+    let attempts = 0;
+    const MAX_ATTEMPTS = 20;
     const attemptLoad = () => {
       if (cancelled) return;
       if (window.loadFarmState) {
-        const fs = farmStateRef.current;
-        const payload = {
-          farm_owner_id: viewedUserId,
-          is_owner:      (currentUser.id === viewedUserId),
-          pots: (fs.pots ?? []).map(p => ({
-            pot_id:          normalizePotId(p.pot_id),
-            seed:            toGodotName(p.seed),
-            elapsed_time:    Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
-            fertilize_count: Number(p.fertilize_count ?? 0),
-          })),
-          animals: (fs.animals ?? []).map(a => ({
-            animal:       toGodotName(a.animal),
-            x:            Number(a.x ?? 0),
-            y:            Number(a.y ?? 0),
-            elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
-          })),
-        };
         window.__godotLoadedUserId = viewedUserId;
-        window.loadFarmState(JSON.stringify(payload));
+        window.loadFarmState(jsonString);
         return;
       }
       attempts += 1;
       if (attempts < MAX_ATTEMPTS) setTimeout(attemptLoad, 100);
     };
-
     attemptLoad();
+
     return () => { cancelled = true; };
-  }, [isGodotReady]);
+  }, [isGodotReady, farmState]);
 
   // ── Reload farm whenever the viewed profile changes ───────────────────────
   // Covers /garden/2 → /garden/3 navigation: same component, new URL param.
