@@ -622,23 +622,24 @@ export default function FarmGame() {
     });
 
     console.log(`[DBG bridge] CALLING loadFarmState for farm_owner_id=${viewedUserId}, pots=${(farmState.pots??[]).length}, animals=${(farmState.animals??[]).length}`);
-    console.log(`[DBG bridge] payload preview:`, payload.substring(0, 200));
 
-    // Godot's JavaScriptBridge callback may not process immediately after the
-    // canvas is moved back from parking.  Fire the call across multiple frames
-    // and with delays so at least one lands after Godot's main loop resumes.
-    const push = () => {
-      if (window.loadFarmState) window.loadFarmState(payload);
-    };
-    push();                                                      // immediate
-    requestAnimationFrame(() => {                                 // next frame
-      push();
-      requestAnimationFrame(() => push());                       // frame + 1
+    // Two-phase push: send an empty payload first to force Godot to clear all
+    // existing nodes (queue_free), wait for the clear to process (a few frames),
+    // then send the real payload.  This prevents queue_free from colliding with
+    // new node spawning when replacing a large scene with a small one.
+    const emptyPayload = JSON.stringify({
+      farm_owner_id: viewedUserId,
+      is_owner: currentUser.id === viewedUserId,
+      pots: [],
+      animals: [],
     });
-    const t1 = setTimeout(push, 300);                            // 300ms
-    const t2 = setTimeout(push, 800);                            // 800ms
 
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    window.loadFarmState(emptyPayload);
+    const t = setTimeout(() => {
+      if (window.loadFarmState) window.loadFarmState(payload);
+    }, 150);
+
+    return () => clearTimeout(t);
   }, [isGodotReady, farmState, viewedUserId, currentUser.id]);
 
   // ── Shop ──────────────────────────────────────────────────────────────────
