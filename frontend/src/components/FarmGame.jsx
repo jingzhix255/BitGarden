@@ -238,6 +238,7 @@ export default function FarmGame() {
   // loadFarm ONLY fetches data and updates React state.  The bridge useEffect
   // below reacts to the farmState change and pushes the payload to Godot.
   const loadFarm = useCallback(async () => {
+    console.log(`[DBG loadFarm] called for viewedUserId=${viewedUserId}`);
     try {
       const res  = await fetch(`/api/farm/${viewedUserId}`);
       const data = await res.json();
@@ -286,6 +287,7 @@ export default function FarmGame() {
       };
 
       farmStateRef.current = newFarmState;
+      console.log(`[DBG loadFarm] setFarmState → pots=${newFarmState.pots.length}, animals=${newFarmState.animals.length}, for user=${viewedUserId}`);
       setFarmState(newFarmState);
     } catch (err) {
       console.error('[FarmGame] loadFarm error:', err);
@@ -478,6 +480,7 @@ export default function FarmGame() {
   // This effect only handles the case where React keeps the component mounted
   // but the URL param changes (same <Route>, different userId).
   useEffect(() => {
+    console.log(`[DBG trigger] viewedUserId=${viewedUserId}, isGodotReadyRef=${isGodotReadyRef.current}`);
     if (isGodotReadyRef.current) loadFarm();
   }, [viewedUserId, loadFarm]);
 
@@ -507,6 +510,7 @@ export default function FarmGame() {
 
     // ── REMOUNT PATH: engine already running from a prior mount ──────────
     if (window.__godotEngine) {
+      console.log(`[DBG engine] REMOUNT PATH — window.loadFarmState exists: ${!!window.loadFarmState}`);
       godotEngineRef.current = window.__godotEngine;
       isGodotReadyRef.current = true;
       setLoadProgress(100);
@@ -588,6 +592,7 @@ export default function FarmGame() {
   // which triggers this effect.  On remount, isGodotReady is set synchronously
   // in the engine loading effect, then loadFarm's setFarmState triggers this.
   useEffect(() => {
+    console.log(`[DBG bridge] isGodotReady=${isGodotReady}, farmState=${!!farmState}, loadFarmState=${!!window.loadFarmState}, viewedUserId=${viewedUserId}`);
     if (!isGodotReady || !farmState || !window.loadFarmState) return;
 
     const fmtD = (ms) => {
@@ -615,6 +620,7 @@ export default function FarmGame() {
       })),
     });
 
+    console.log(`[DBG bridge] CALLING loadFarmState for farm_owner_id=${viewedUserId}, pots=${(farmState.pots??[]).length}, animals=${(farmState.animals??[]).length}`);
     window.loadFarmState(payload);
   }, [isGodotReady, farmState, viewedUserId, currentUser.id]);
 
