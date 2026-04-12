@@ -261,6 +261,7 @@ export default function FarmGame() {
       }
 
       const raw = data.farm_state ?? { pots: [], animals: [] };
+      console.log(`[DBG loadFarm] RAW API farm_state:`, JSON.stringify(raw));
       const newFarmState = {
         pots: (raw.pots ?? []).map(p => {
           const rawTs      = Number(p.placed_at ?? 0);
@@ -621,7 +622,23 @@ export default function FarmGame() {
     });
 
     console.log(`[DBG bridge] CALLING loadFarmState for farm_owner_id=${viewedUserId}, pots=${(farmState.pots??[]).length}, animals=${(farmState.animals??[]).length}`);
-    window.loadFarmState(payload);
+    console.log(`[DBG bridge] payload preview:`, payload.substring(0, 200));
+
+    // Godot's JavaScriptBridge callback may not process immediately after the
+    // canvas is moved back from parking.  Fire the call across multiple frames
+    // and with delays so at least one lands after Godot's main loop resumes.
+    const push = () => {
+      if (window.loadFarmState) window.loadFarmState(payload);
+    };
+    push();                                                      // immediate
+    requestAnimationFrame(() => {                                 // next frame
+      push();
+      requestAnimationFrame(() => push());                       // frame + 1
+    });
+    const t1 = setTimeout(push, 300);                            // 300ms
+    const t2 = setTimeout(push, 800);                            // 800ms
+
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [isGodotReady, farmState, viewedUserId, currentUser.id]);
 
   // ── Shop ──────────────────────────────────────────────────────────────────
