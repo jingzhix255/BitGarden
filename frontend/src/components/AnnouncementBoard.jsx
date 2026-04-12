@@ -81,7 +81,7 @@ export default function AnnouncementBoard() {
       .catch(() => setLoading(false));
   }, []);
 
-  const handleNavigate = (userId) => navigate(`/garden/${userId}`);
+  const handleNavigate = (userId) => { window.location.href = `/garden/${userId}`; };
 
   return (
     <div className="ab-board">

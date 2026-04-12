@@ -61,25 +61,8 @@ function getGodotCanvas() {
     __godotCanvas.id = 'godot-canvas';
     __godotCanvas.style.cssText =
       'position:absolute;top:0;left:0;width:100%;height:100%;display:block;border:none;';
-    getCanvasParking().appendChild(__godotCanvas);
   }
   return __godotCanvas;
-}
-
-// ─── Canvas parking ──────────────────────────────────────────────────────────
-// A hidden container on document.body that holds the canvas when FarmGame is
-// unmounted.  This prevents the canvas from being detached from the DOM, which
-// would corrupt Godot's WebGL context and JavaScriptBridge callbacks.
-let __godotCanvasParking = null;
-function getCanvasParking() {
-  if (!__godotCanvasParking) {
-    __godotCanvasParking = document.createElement('div');
-    __godotCanvasParking.id = 'godot-canvas-parking';
-    __godotCanvasParking.style.cssText =
-      'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;overflow:hidden;pointer-events:none;';
-    document.body.appendChild(__godotCanvasParking);
-  }
-  return __godotCanvasParking;
 }
 
 /**
@@ -238,7 +221,6 @@ export default function FarmGame() {
   // loadFarm ONLY fetches data and updates React state.  The bridge useEffect
   // below reacts to the farmState change and pushes the payload to Godot.
   const loadFarm = useCallback(async () => {
-    console.log(`[DBG loadFarm] called for viewedUserId=${viewedUserId}`);
     try {
       const res  = await fetch(`/api/farm/${viewedUserId}`);
       const data = await res.json();
@@ -261,7 +243,6 @@ export default function FarmGame() {
       }
 
       const raw = data.farm_state ?? { pots: [], animals: [] };
-      console.log(`[DBG loadFarm] RAW API farm_state:`, JSON.stringify(raw));
       const newFarmState = {
         pots: (raw.pots ?? []).map(p => {
           const rawTs      = Number(p.placed_at ?? 0);
@@ -288,7 +269,6 @@ export default function FarmGame() {
       };
 
       farmStateRef.current = newFarmState;
-      console.log(`[DBG loadFarm] setFarmState → pots=${newFarmState.pots.length}, animals=${newFarmState.animals.length}, for user=${viewedUserId}`);
       setFarmState(newFarmState);
     } catch (err) {
       console.error('[FarmGame] loadFarm error:', err);
@@ -481,7 +461,6 @@ export default function FarmGame() {
   // This effect only handles the case where React keeps the component mounted
   // but the URL param changes (same <Route>, different userId).
   useEffect(() => {
-    console.log(`[DBG trigger] viewedUserId=${viewedUserId}, isGodotReadyRef=${isGodotReadyRef.current}`);
     if (isGodotReadyRef.current) loadFarm();
   }, [viewedUserId, loadFarm]);
 
@@ -511,19 +490,13 @@ export default function FarmGame() {
 
     // ── REMOUNT PATH: engine already running from a prior mount ──────────
     if (window.__godotEngine) {
-      console.log(`[DBG engine] REMOUNT PATH — window.loadFarmState exists: ${!!window.loadFarmState}`);
       godotEngineRef.current = window.__godotEngine;
       isGodotReadyRef.current = true;
       setLoadProgress(100);
       setGodotLoading(false);
       setIsGodotReady(true);
       loadFarm();
-      return () => {
-        ro.disconnect();
-        const parking = getCanvasParking();
-        if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
-        parking.appendChild(canvas);
-      };
+      return () => ro.disconnect();
     }
 
     // ── FIRST LOAD: inject the script and boot the engine ────────────────
@@ -562,12 +535,7 @@ export default function FarmGame() {
 
     if (document.querySelector('script[src="/farm_build/index.js"]')) {
       if (typeof Engine !== 'undefined') bootEngine();
-      return () => {
-        ro.disconnect();
-        const parking = getCanvasParking();
-        if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
-        parking.appendChild(canvas);
-      };
+      return () => ro.disconnect();
     }
 
     const script = document.createElement('script');
@@ -576,12 +544,7 @@ export default function FarmGame() {
     script.onload = bootEngine;
     document.head.appendChild(script);
 
-    return () => {
-      ro.disconnect();
-      const parking = getCanvasParking();
-      if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
-      parking.appendChild(canvas);
-    };
+    return () => ro.disconnect();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -593,7 +556,6 @@ export default function FarmGame() {
   // which triggers this effect.  On remount, isGodotReady is set synchronously
   // in the engine loading effect, then loadFarm's setFarmState triggers this.
   useEffect(() => {
-    console.log(`[DBG bridge] isGodotReady=${isGodotReady}, farmState=${!!farmState}, loadFarmState=${!!window.loadFarmState}, viewedUserId=${viewedUserId}`);
     if (!isGodotReady || !farmState || !window.loadFarmState) return;
 
     const fmtD = (ms) => {
@@ -621,25 +583,7 @@ export default function FarmGame() {
       })),
     });
 
-    console.log(`[DBG bridge] CALLING loadFarmState for farm_owner_id=${viewedUserId}, pots=${(farmState.pots??[]).length}, animals=${(farmState.animals??[]).length}`);
-
-    // Two-phase push: send an empty payload first to force Godot to clear all
-    // existing nodes (queue_free), wait for the clear to process (a few frames),
-    // then send the real payload.  This prevents queue_free from colliding with
-    // new node spawning when replacing a large scene with a small one.
-    const emptyPayload = JSON.stringify({
-      farm_owner_id: viewedUserId,
-      is_owner: currentUser.id === viewedUserId,
-      pots: [],
-      animals: [],
-    });
-
-    window.loadFarmState(emptyPayload);
-    const t = setTimeout(() => {
-      if (window.loadFarmState) window.loadFarmState(payload);
-    }, 150);
-
-    return () => clearTimeout(t);
+    window.loadFarmState(payload);
   }, [isGodotReady, farmState, viewedUserId, currentUser.id]);
 
   // ── Shop ──────────────────────────────────────────────────────────────────

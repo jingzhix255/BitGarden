@@ -281,7 +281,7 @@ export default function Neighborhood() {
 
       {/* ── Floating nav ── */}
       <nav className="nb-float-nav">
-        <button className="nb-nav-btn nb-nav-btn--farm" onClick={() => navigate('/farm')}>
+        <button className="nb-nav-btn nb-nav-btn--farm" onClick={() => { window.location.href = '/farm'; }}>
           ← My Farm
         </button>
         <button className="nb-nav-btn" onClick={logout}>Log out</button>
@@ -342,7 +342,7 @@ export default function Neighborhood() {
                         key={u.id}
                         className={`nb-card${u.id === currentUser.id ? ' nb-card--mine' : ''}`}
                         style={{ animationDelay: `${i * 55}ms` }}
-                        onClick={() => navigate(`/garden/${u.id}`)}
+                        onClick={() => { window.location.href = `/garden/${u.id}`; }}
                       >
                         <div className="nb-card-avatar-wrap">
                           <img src={avatarUrl(u.username)} alt={u.username} className="nb-card-avatar" />
