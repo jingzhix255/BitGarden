@@ -113,6 +113,8 @@ function parseAlbOidcJwt(token) {
 
 // ─── Routes ────────────────────────────────────────────────────────────────
 
+app.get('/api/version', (_req, res) => res.json({ v: '2026-04-13-tx-select' }));
+
 // GET /api/auth/me
 app.get('/api/auth/me', async (req, res) => {
   try {
@@ -609,9 +611,9 @@ app.post('/api/farm/fertilize', async (req, res) => {
       ? String(pot_id).trim().toLowerCase()
       : `pot${pot_id}`;
 
+    // Quick pre-check (non-authoritative — the transaction is the real guard)
     const user = await getUser(userId);
     if (!user) return res.status(404).json({ error: 'User not found.' });
-    if (user.fertilizer < 1) return res.status(400).json({ error: 'No fertilizer available.' });
 
     const { rows: [item] } = await db.execute({
       sql: 'SELECT * FROM farm_items WHERE user_id = ? AND item_type = ? AND pot_id = ?',
@@ -624,24 +626,30 @@ app.post('/api/farm/fertilize', async (req, res) => {
 
     const itemId = Number(item.id);
 
+    // ── Authoritative guard: everything inside the write-lock ──────────
     const tx = await db.transaction('write');
     try {
-      const deduct = await tx.execute({
-        sql: 'UPDATE users SET fertilizer = fertilizer - 1 WHERE id = ? AND fertilizer > 0',
+      // Read the real balance inside the lock — no replica lag, no races
+      const [txUser] = (await tx.execute({
+        sql: 'SELECT fertilizer FROM users WHERE id = ?',
         args: [userId],
-      });
-      if (deduct.rowsAffected === 0) {
+      })).rows;
+
+      if (!txUser || Number(txUser.fertilizer) < 1) {
         await tx.rollback();
         return res.status(400).json({ error: 'No fertilizer available.' });
       }
-      const bump = await tx.execute({
+
+      await tx.execute({
+        sql: 'UPDATE users SET fertilizer = fertilizer - 1 WHERE id = ?',
+        args: [userId],
+      });
+
+      await tx.execute({
         sql: 'UPDATE farm_items SET fertilize_count = COALESCE(fertilize_count, 0) + 1 WHERE id = ?',
         args: [itemId],
       });
-      if (bump.rowsAffected === 0) {
-        await tx.rollback();
-        return res.status(500).json({ error: 'Failed to update plant — no matching farm item.' });
-      }
+
       await tx.commit();
     } catch (txError) {
       try { await tx.rollback(); } catch (_) {}
@@ -651,13 +659,17 @@ app.post('/api/farm/fertilize', async (req, res) => {
 
     await syncFarmState(userId);
 
-    const updatedItem = (await db.execute({ sql: 'SELECT * FROM farm_items WHERE id = ?', args: [itemId] })).rows[0];
-    const newCount = Number(updatedItem?.fertilize_count ?? 0);
+    // Post-commit read-back — return only verified data
+    const verifiedUser = await getUser(userId);
+    const verifiedItem = (await db.execute({
+      sql: 'SELECT fertilize_count FROM farm_items WHERE id = ?',
+      args: [itemId],
+    })).rows[0];
 
     res.json({
       success:         true,
-      user:            await getUser(userId),
-      fertilize_count: newCount,
+      user:            verifiedUser,
+      fertilize_count: Number(verifiedItem?.fertilize_count ?? 0),
       inventory:       await getInventoryMap(userId),
     });
   } catch (error) {

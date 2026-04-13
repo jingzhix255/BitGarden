@@ -300,38 +300,42 @@ export default function FarmGame() {
         setAvailablePlants(plants);
         setAvailableAnimals(animals);
 
-        // Belt-and-suspenders: if farm data is already loaded, push it
-        // directly to Godot right now.  Handles the race where the bridge
-        // effect already ran but window.loadFarmState wasn't registered yet.
-        setTimeout(() => {
+        // Belt-and-suspenders: push farm data directly at 500ms and 1000ms.
+        // Catches the race where the bridge effect already ran before
+        // loadFarmState was registered or before Godot's scene tree was ready.
+        const pushIfReady = () => {
           const fs = farmStateRef.current;
-          if (fs && typeof window.loadFarmState === 'function') {
-            const fmtD = (ms) => {
-              if (!ms || ms <= 0) return '';
-              const d = new Date(ms);
-              return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
-            };
-            window.loadFarmState(JSON.stringify({
-              farm_owner_id: theirId,
-              is_owner: myId === theirId,
-              fertilizer: myUserRef.current?.fertilizer ?? 0,
-              pots: (fs.pots ?? []).map(p => ({
-                pot_id: normalizePotId(p.pot_id),
-                seed: toGodotName(p.seed),
-                elapsed_time: Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
-                fertilize_count: Number(p.fertilize_count ?? 0),
-                planted_date: fmtD(p.placed_at),
-              })),
-              animals: (fs.animals ?? []).map(a => ({
-                animal: toGodotName(a.animal),
-                x: Number(a.x ?? 0),
-                y: Number(a.y ?? 0),
-                elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
-                planted_date: fmtD(a.placed_at),
-              })),
-            }));
-          }
-        }, 200);
+          if (!fs || typeof window.loadFarmState !== 'function') return;
+          const fmtD = (ms) => {
+            if (!ms || ms <= 0) return '';
+            const d = new Date(ms);
+            return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+          };
+          window.loadFarmState(JSON.stringify({
+            farm_owner_id: theirId,
+            is_owner: myId === theirId,
+            fertilizer: myUserRef.current?.fertilizer ?? 0,
+            pots: (fs.pots ?? []).map(p => ({
+              pot_id: normalizePotId(p.pot_id),
+              seed: toGodotName(p.seed),
+              elapsed_time: Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
+              fertilize_count: Number(p.fertilize_count ?? 0),
+              planted_date: fmtD(p.placed_at),
+            })),
+            animals: (fs.animals ?? []).map(a => ({
+              animal: toGodotName(a.animal),
+              x: Number(a.x ?? 0),
+              y: Number(a.y ?? 0),
+              elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
+              planted_date: fmtD(a.placed_at),
+            })),
+          }));
+        };
+        setTimeout(pushIfReady, 500);
+        setTimeout(pushIfReady, 1000);
+
+        // If loadFarm hasn't fetched data yet, kick it off now
+        if (!farmStateRef.current) loadFarm();
 
         return;
       }
@@ -624,7 +628,12 @@ export default function FarmGame() {
       return true;
     };
 
-    if (buildAndPush()) return;
+    if (buildAndPush()) {
+      // Safety net: re-push after 500ms in case Godot's scene tree wasn't
+      // fully ready when the first call arrived (common on cold start).
+      const retry = setTimeout(() => buildAndPush(), 500);
+      return () => clearTimeout(retry);
+    }
 
     // loadFarmState may not be registered yet — poll briefly
     let attempts = 0;
