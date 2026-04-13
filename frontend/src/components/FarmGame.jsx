@@ -416,6 +416,12 @@ export default function FarmGame() {
         if (fertInFlightRef.current) return;
         fertInFlightRef.current = true;
 
+        // Optimistically deduct from the ref so rapid clicks see the
+        // reduced count before React re-renders with the API response.
+        if (myUserRef.current) {
+          myUserRef.current = { ...myUserRef.current, fertilizer: currentFert - 1 };
+        }
+
         const res = await fetch('/api/farm/fertilize', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user_id: myId, pot_id, viewed_farm_id: theirId }),
@@ -424,7 +430,6 @@ export default function FarmGame() {
           const r = await res.json();
           setMyUser(r.user);
 
-          // Update fertilize_count in local state (placed_at stays unchanged)
           setFarmState(prev => {
             if (!prev) return prev;
             const updated = {
@@ -442,6 +447,10 @@ export default function FarmGame() {
           setFertAnimKey(k => k + 1);
           flash('🌿 +1 stage growth!');
         } else {
+          // Restore the optimistic deduction on failure
+          if (myUserRef.current) {
+            myUserRef.current = { ...myUserRef.current, fertilizer: currentFert };
+          }
           const r = await res.json();
           flash(`❌ ${r.error}`);
         }

@@ -624,10 +624,16 @@ app.post('/api/farm/fertilize', async (req, res) => {
 
     const tx = await db.transaction('write');
     try {
-      await tx.execute({
-        sql: 'UPDATE users SET fertilizer = fertilizer - 1 WHERE id = ?',
+      // Atomic deduction — WHERE fertilizer > 0 prevents going negative
+      // even if two requests pass the earlier check concurrently.
+      const deduct = await tx.execute({
+        sql: 'UPDATE users SET fertilizer = fertilizer - 1 WHERE id = ? AND fertilizer > 0',
         args: [userId],
       });
+      if (deduct.rowsAffected === 0) {
+        await tx.rollback();
+        return res.status(400).json({ error: 'No fertilizer available.' });
+      }
       await tx.execute({
         sql: 'UPDATE farm_items SET fertilize_count = COALESCE(fertilize_count, 0) + 1 WHERE id = ?',
         args: [item.id],
