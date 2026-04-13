@@ -299,23 +299,51 @@ export default function FarmGame() {
         const animals = (event.data.animals ?? []).map(toGodotName);
         setAvailablePlants(plants);
         setAvailableAnimals(animals);
+
+        // Belt-and-suspenders: if farm data is already loaded, push it
+        // directly to Godot right now.  Handles the race where the bridge
+        // effect already ran but window.loadFarmState wasn't registered yet.
+        setTimeout(() => {
+          const fs = farmStateRef.current;
+          if (fs && typeof window.loadFarmState === 'function') {
+            const fmtD = (ms) => {
+              if (!ms || ms <= 0) return '';
+              const d = new Date(ms);
+              return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+            };
+            window.loadFarmState(JSON.stringify({
+              farm_owner_id: theirId,
+              is_owner: myId === theirId,
+              fertilizer: myUserRef.current?.fertilizer ?? 0,
+              pots: (fs.pots ?? []).map(p => ({
+                pot_id: normalizePotId(p.pot_id),
+                seed: toGodotName(p.seed),
+                elapsed_time: Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
+                fertilize_count: Number(p.fertilize_count ?? 0),
+                planted_date: fmtD(p.placed_at),
+              })),
+              animals: (fs.animals ?? []).map(a => ({
+                animal: toGodotName(a.animal),
+                x: Number(a.x ?? 0),
+                y: Number(a.y ?? 0),
+                elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
+                planted_date: fmtD(a.placed_at),
+              })),
+            }));
+          }
+        }, 200);
+
         return;
       }
 
       // ── Triple-lock ownership gate ─────────────────────────────────────
-      // Lock 1 — closure: theirId captured when this effect registered.
-      //          Re-registers on every viewedUserId change → never stale.
-      // Lock 2 — live ref: viewedUserIdRef.current is always the latest value.
-      // Lock 3 — payload stamp: Godot echoes back the farm_owner_id we sent it.
-      //          Catches stale iframe messages from a previously loaded farm.
       const payloadFarmOwner = payload.farm_owner_id != null
         ? Number(payload.farm_owner_id) : null;
 
       const isActualOwner =
-        myId === theirId &&                   // closure check
-        myId === viewedUserIdRef.current &&   // live ref check
-        (payloadFarmOwner === null ||         // payload check (null = Godot didn't echo it yet)
-         payloadFarmOwner === theirId);       // must match the farm we loaded
+        myId === theirId &&
+        myId === viewedUserIdRef.current &&
+        (payloadFarmOwner === null || payloadFarmOwner === theirId);
 
       if (!isActualOwner) {
         if (type === 'HARVEST_CROP' || type === 'HARVEST_PLANT' ||
@@ -325,128 +353,133 @@ export default function FarmGame() {
         return;
       }
 
-      // ── PLANT_SEED ─────────────────────────────────────────────────────
-      if (type === 'PLANT_SEED') {
-        const pot_id = normalizePotId(payload.pot_id);
-        const seed   = toGodotName(payload.seed);
-        const res = await fetch('/api/farm/plant-seed', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: myId, pot_id, seed }),
-        });
-        if (res.ok) {
-          const r = await res.json();
-          setInventory(r.inventory);
-          setEquipped(null);
-          // Update local farmState so fertilize and pot-occupied checks work
-          // immediately without a refresh.
-          const now = Date.now();
-          setFarmState(prev => {
-            const updated = { ...(prev ?? { pots: [], animals: [] }) };
-            updated.pots = [...(updated.pots ?? []), { pot_id, seed, placed_at: now, fertilize_count: 0 }];
-            return updated;
+      try {
+        // ── PLANT_SEED ───────────────────────────────────────────────────
+        if (type === 'PLANT_SEED') {
+          const pot_id = normalizePotId(payload.pot_id);
+          const seed   = toGodotName(payload.seed);
+          const res = await fetch('/api/farm/plant-seed', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: myId, pot_id, seed }),
           });
-          setFarmItems(prev => [
-            ...prev,
-            { user_id: myId, item_type: 'plant', item_name: seed, pot_id, placed_at: now },
-          ]);
-          flash(`🌱 Planted ${seed}!`);
-        } else {
-          const r = await res.json();
-          flash(`❌ ${r.error}`);
-          if (res.status === 400) loadFarm();
-        }
-      }
-
-      // ── PLACE_ANIMAL ───────────────────────────────────────────────────
-      if (type === 'PLACE_ANIMAL') {
-        const { x, y } = payload;
-        const animal = toGodotName(payload.animal);
-        const res = await fetch('/api/farm/place-animal', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: myId, animal, x, y }),
-        });
-        if (res.ok) {
-          const r = await res.json();
-          setInventory(r.inventory);
-          setEquipped(null);
-          const now = Date.now();
-          setFarmState(prev => {
-            const updated = { ...(prev ?? { pots: [], animals: [] }) };
-            updated.animals = [...(updated.animals ?? []), { animal, x: Number(x ?? 0), y: Number(y ?? 0), placed_at: now }];
-            return updated;
-          });
-          setFarmItems(prev => [
-            ...prev,
-            { user_id: myId, item_type: 'animal', item_name: animal, home_x: Number(x ?? 0), home_y: Number(y ?? 0), placed_at: now },
-          ]);
-          flash(`🐾 Placed ${animal}!`);
-        } else {
-          const r = await res.json();
-          flash(`❌ ${r.error}`);
-        }
-      }
-
-      // ── HARVEST_CROP / HARVEST_PLANT ───────────────────────────────────
-      if (type === 'HARVEST_CROP' || type === 'HARVEST_PLANT') {
-        const pot_id = normalizePotId(payload.pot_id);
-        const crop   = toGodotName(payload.crop ?? payload.seed);
-        const res = await fetch('/api/farm/harvest', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: myId, pot_id, crop, viewed_farm_id: theirId }),
-        });
-        if (res.ok) {
-          const r = await res.json();
-          setInventory(r.inventory);
-          setFarmItems(prev => prev.filter(
-            fi => !(fi.item_type === 'plant' && normalizePotId(fi.pot_id) === pot_id)
-          ));
-          setTab('Inventory');
-          flash(`🌾 Harvested ${crop}!`);
-        } else {
-          const r = await res.json();
-          flash(`❌ ${r.error}`);
-        }
-      }
-
-      // ── USE_FERTILIZER / FERTILIZE_PLANT ───────────────────────────────
-      if (type === 'USE_FERTILIZER' || type === 'FERTILIZE_PLANT') {
-        const pot_id = normalizePotId(payload.pot_id);
-
-        const currentFert = myUserRef.current?.fertilizer ?? 0;
-        if (currentFert < 1) { flash('❌ No fertilizer left!'); return; }
-        if (fertInFlightRef.current) return;
-        fertInFlightRef.current = true;
-
-        const res = await fetch('/api/farm/fertilize', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: myId, pot_id, viewed_farm_id: theirId }),
-        });
-        if (res.ok) {
-          const r = await res.json();
-          setMyUser(r.user);
-          myUserRef.current = r.user;
-
-          setFarmState(prev => {
-            if (!prev) return prev;
-            const updated = {
+          if (res.ok) {
+            const r = await res.json();
+            setInventory(r.inventory);
+            setEquipped(null);
+            const now = Date.now();
+            setFarmState(prev => {
+              const updated = { ...(prev ?? { pots: [], animals: [] }) };
+              updated.pots = [...(updated.pots ?? []), { pot_id, seed, placed_at: now, fertilize_count: 0 }];
+              return updated;
+            });
+            setFarmItems(prev => [
               ...prev,
-              pots: (prev.pots ?? []).map(p =>
-                normalizePotId(p.pot_id) === pot_id
-                  ? { ...p, fertilize_count: r.fertilize_count }
-                  : p
-              ),
-            };
-            farmStateRef.current = updated;
-            return updated;
-          });
-
-          setFertAnimKey(k => k + 1);
-          flash('🌿 +1 stage growth!');
-        } else {
-          const r = await res.json();
-          flash(`❌ ${r.error}`);
+              { user_id: myId, item_type: 'plant', item_name: seed, pot_id, placed_at: now },
+            ]);
+            flash(`🌱 Planted ${seed}!`);
+          } else {
+            const r = await res.json().catch(() => ({ error: 'Request failed' }));
+            flash(`❌ ${r.error}`);
+            if (res.status === 400) loadFarm();
+          }
         }
-        fertInFlightRef.current = false;
+
+        // ── PLACE_ANIMAL ─────────────────────────────────────────────────
+        if (type === 'PLACE_ANIMAL') {
+          const { x, y } = payload;
+          const animal = toGodotName(payload.animal);
+          const res = await fetch('/api/farm/place-animal', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: myId, animal, x, y }),
+          });
+          if (res.ok) {
+            const r = await res.json();
+            setInventory(r.inventory);
+            setEquipped(null);
+            const now = Date.now();
+            setFarmState(prev => {
+              const updated = { ...(prev ?? { pots: [], animals: [] }) };
+              updated.animals = [...(updated.animals ?? []), { animal, x: Number(x ?? 0), y: Number(y ?? 0), placed_at: now }];
+              return updated;
+            });
+            setFarmItems(prev => [
+              ...prev,
+              { user_id: myId, item_type: 'animal', item_name: animal, home_x: Number(x ?? 0), home_y: Number(y ?? 0), placed_at: now },
+            ]);
+            flash(`🐾 Placed ${animal}!`);
+          } else {
+            const r = await res.json().catch(() => ({ error: 'Request failed' }));
+            flash(`❌ ${r.error}`);
+          }
+        }
+
+        // ── HARVEST_CROP / HARVEST_PLANT ─────────────────────────────────
+        if (type === 'HARVEST_CROP' || type === 'HARVEST_PLANT') {
+          const pot_id = normalizePotId(payload.pot_id);
+          const crop   = toGodotName(payload.crop ?? payload.seed);
+          const res = await fetch('/api/farm/harvest', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: myId, pot_id, crop, viewed_farm_id: theirId }),
+          });
+          if (res.ok) {
+            const r = await res.json();
+            setInventory(r.inventory);
+            setFarmItems(prev => prev.filter(
+              fi => !(fi.item_type === 'plant' && normalizePotId(fi.pot_id) === pot_id)
+            ));
+            setTab('Inventory');
+            flash(`🌾 Harvested ${crop}!`);
+          } else {
+            const r = await res.json().catch(() => ({ error: 'Request failed' }));
+            flash(`❌ ${r.error}`);
+          }
+        }
+
+        // ── USE_FERTILIZER / FERTILIZE_PLANT ─────────────────────────────
+        if (type === 'USE_FERTILIZER' || type === 'FERTILIZE_PLANT') {
+          const pot_id = normalizePotId(payload.pot_id);
+
+          const currentFert = myUserRef.current?.fertilizer ?? 0;
+          if (currentFert < 1) { flash('❌ No fertilizer left!'); return; }
+          if (fertInFlightRef.current) return;
+          fertInFlightRef.current = true;
+
+          try {
+            const res = await fetch('/api/farm/fertilize', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ user_id: myId, pot_id, viewed_farm_id: theirId }),
+            });
+            if (res.ok) {
+              const r = await res.json();
+              setMyUser(r.user);
+              myUserRef.current = r.user;
+
+              setFarmState(prev => {
+                if (!prev) return prev;
+                const updated = {
+                  ...prev,
+                  pots: (prev.pots ?? []).map(p =>
+                    normalizePotId(p.pot_id) === pot_id
+                      ? { ...p, fertilize_count: r.fertilize_count }
+                      : p
+                  ),
+                };
+                farmStateRef.current = updated;
+                return updated;
+              });
+
+              setFertAnimKey(k => k + 1);
+              flash('🌿 +1 stage growth!');
+            } else {
+              const r = await res.json().catch(() => ({ error: 'No fertilizer available.' }));
+              flash(`❌ ${r.error}`);
+            }
+          } finally {
+            fertInFlightRef.current = false;
+          }
+        }
+      } catch (err) {
+        console.error('[FarmGame] message handler error:', err);
       }
     };
 
