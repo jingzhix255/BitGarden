@@ -24,14 +24,15 @@ async function main() {
     );
 
     CREATE TABLE IF NOT EXISTS farm_items (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id    INTEGER NOT NULL,
-      item_type  TEXT    NOT NULL,
-      item_name  TEXT    NOT NULL,
-      pot_id     TEXT,
-      home_x     REAL,
-      home_y     REAL,
-      placed_at  INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id         INTEGER NOT NULL,
+      item_type       TEXT    NOT NULL,
+      item_name       TEXT    NOT NULL,
+      pot_id          TEXT,
+      home_x          REAL,
+      home_y          REAL,
+      placed_at       INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+      fertilize_count INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS inventory (

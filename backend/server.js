@@ -622,10 +622,10 @@ app.post('/api/farm/fertilize', async (req, res) => {
       return res.status(403).json({ error: 'Action blocked: you do not own the farm you are trying to modify.' });
     }
 
+    const itemId = Number(item.id);
+
     const tx = await db.transaction('write');
     try {
-      // Atomic deduction — WHERE fertilizer > 0 prevents going negative
-      // even if two requests pass the earlier check concurrently.
       const deduct = await tx.execute({
         sql: 'UPDATE users SET fertilizer = fertilizer - 1 WHERE id = ? AND fertilizer > 0',
         args: [userId],
@@ -634,25 +634,30 @@ app.post('/api/farm/fertilize', async (req, res) => {
         await tx.rollback();
         return res.status(400).json({ error: 'No fertilizer available.' });
       }
-      await tx.execute({
+      const bump = await tx.execute({
         sql: 'UPDATE farm_items SET fertilize_count = COALESCE(fertilize_count, 0) + 1 WHERE id = ?',
-        args: [item.id],
+        args: [itemId],
       });
+      if (bump.rowsAffected === 0) {
+        await tx.rollback();
+        return res.status(500).json({ error: 'Failed to update plant — no matching farm item.' });
+      }
       await tx.commit();
     } catch (txError) {
-      await tx.rollback();
+      try { await tx.rollback(); } catch (_) {}
       console.error('[farm/fertilize] transaction rolled back:', txError);
       return res.status(500).json({ error: txError.message || 'Transaction failed.' });
     }
 
     await syncFarmState(userId);
 
-    const updatedItem = (await db.execute({ sql: 'SELECT * FROM farm_items WHERE id = ?', args: [item.id] })).rows[0];
+    const updatedItem = (await db.execute({ sql: 'SELECT * FROM farm_items WHERE id = ?', args: [itemId] })).rows[0];
+    const newCount = Number(updatedItem?.fertilize_count ?? 0);
 
     res.json({
       success:         true,
       user:            await getUser(userId),
-      fertilize_count: Number(updatedItem.fertilize_count ?? 0),
+      fertilize_count: newCount,
       inventory:       await getInventoryMap(userId),
     });
   } catch (error) {
