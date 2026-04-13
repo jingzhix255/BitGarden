@@ -144,7 +144,7 @@ export default function FarmGame() {
   // Always-current myUser ref — lets closures read live fertilizer/coins without
   // being stale (myUser itself is captured at effect-registration time).
   // Must be declared AFTER myUser to avoid temporal dead zone.
-  const myUserRef = useRef(null);
+  const myUserRef = useRef(myUser);
   useEffect(() => { myUserRef.current = myUser; }, [myUser]);
   const [farmItems,   setFarmItems]   = useState([]);
   const [inventory,   setInventory]   = useState({});
@@ -236,10 +236,11 @@ export default function FarmGame() {
 
       if (isOwner) {
         setMyUser(data.user);
+        myUserRef.current = data.user;
         setInventory(data.inventory ?? {});
       } else {
         const me = await fetch(`/api/farm/${currentUser.id}`);
-        if (me.ok) { const d = await me.json(); setMyUser(d.user); }
+        if (me.ok) { const d = await me.json(); setMyUser(d.user); myUserRef.current = d.user; }
       }
 
       const raw = data.farm_state ?? { pots: [], animals: [] };
@@ -416,12 +417,6 @@ export default function FarmGame() {
         if (fertInFlightRef.current) return;
         fertInFlightRef.current = true;
 
-        // Optimistically deduct from the ref so rapid clicks see the
-        // reduced count before React re-renders with the API response.
-        if (myUserRef.current) {
-          myUserRef.current = { ...myUserRef.current, fertilizer: currentFert - 1 };
-        }
-
         const res = await fetch('/api/farm/fertilize', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user_id: myId, pot_id, viewed_farm_id: theirId }),
@@ -429,6 +424,7 @@ export default function FarmGame() {
         if (res.ok) {
           const r = await res.json();
           setMyUser(r.user);
+          myUserRef.current = r.user;
 
           setFarmState(prev => {
             if (!prev) return prev;
@@ -447,10 +443,6 @@ export default function FarmGame() {
           setFertAnimKey(k => k + 1);
           flash('🌿 +1 stage growth!');
         } else {
-          // Restore the optimistic deduction on failure
-          if (myUserRef.current) {
-            myUserRef.current = { ...myUserRef.current, fertilizer: currentFert };
-          }
           const r = await res.json();
           flash(`❌ ${r.error}`);
         }
@@ -560,12 +552,13 @@ export default function FarmGame() {
   // ── Bridge: push farmState to Godot whenever it changes ─────────────────
   // This is the ONLY path that calls window.loadFarmState.  loadFarm() just
   // fetches data and calls setFarmState(); this effect reacts to that update
-  // and pushes the constructed payload to Godot.  On cold start, isGodotReady
-  // flips to true (via GODOT_READY message) AFTER farmState is already set,
-  // which triggers this effect.  On remount, isGodotReady is set synchronously
-  // in the engine loading effect, then loadFarm's setFarmState triggers this.
+  // and pushes the constructed payload to Godot.
+  //
+  // On cold start, Godot may send GODOT_READY before registering
+  // window.loadFarmState.  To handle this race, we poll briefly (up to 2s)
+  // when the function isn't available yet rather than silently bailing.
   useEffect(() => {
-    if (!isGodotReady || !farmState || !window.loadFarmState) return;
+    if (!isGodotReady || !farmState) return;
 
     const fmtD = (ms) => {
       if (!ms || ms <= 0) return '';
@@ -573,26 +566,39 @@ export default function FarmGame() {
       return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
     };
 
-    const payload = JSON.stringify({
-      farm_owner_id: viewedUserId,
-      is_owner: currentUser.id === viewedUserId,
-      pots: (farmState.pots ?? []).map(p => ({
-        pot_id:          normalizePotId(p.pot_id),
-        seed:            toGodotName(p.seed),
-        elapsed_time:    Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
-        fertilize_count: Number(p.fertilize_count ?? 0),
-        planted_date:    fmtD(p.placed_at),
-      })),
-      animals: (farmState.animals ?? []).map(a => ({
-        animal:       toGodotName(a.animal),
-        x:            Number(a.x ?? 0),
-        y:            Number(a.y ?? 0),
-        elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
-        planted_date: fmtD(a.placed_at),
-      })),
-    });
+    const buildAndPush = () => {
+      if (typeof window.loadFarmState !== 'function') return false;
+      const payload = JSON.stringify({
+        farm_owner_id: viewedUserId,
+        is_owner: currentUser.id === viewedUserId,
+        fertilizer: myUserRef.current?.fertilizer ?? 0,
+        pots: (farmState.pots ?? []).map(p => ({
+          pot_id:          normalizePotId(p.pot_id),
+          seed:            toGodotName(p.seed),
+          elapsed_time:    Math.max(0, Math.floor((Date.now() - (p.placed_at ?? 0)) / 1000)),
+          fertilize_count: Number(p.fertilize_count ?? 0),
+          planted_date:    fmtD(p.placed_at),
+        })),
+        animals: (farmState.animals ?? []).map(a => ({
+          animal:       toGodotName(a.animal),
+          x:            Number(a.x ?? 0),
+          y:            Number(a.y ?? 0),
+          elapsed_time: Math.max(0, Math.floor((Date.now() - (a.placed_at ?? 0)) / 1000)),
+          planted_date: fmtD(a.placed_at),
+        })),
+      });
+      window.loadFarmState(payload);
+      return true;
+    };
 
-    window.loadFarmState(payload);
+    if (buildAndPush()) return;
+
+    // loadFarmState may not be registered yet — poll briefly
+    let attempts = 0;
+    const timer = setInterval(() => {
+      if (buildAndPush() || ++attempts >= 20) clearInterval(timer);
+    }, 100);
+    return () => clearInterval(timer);
   }, [isGodotReady, farmState, viewedUserId, currentUser.id]);
 
   // ── Shop ──────────────────────────────────────────────────────────────────
