@@ -451,7 +451,6 @@ export default function FarmGame() {
           const currentFert = myUserRef.current?.fertilizer ?? 0;
           if (currentFert < 1) {
             flash('❌ No fertilizer left!');
-            setTimeout(pushFarmStateToGodot, 150);
             return;
           }
           if (fertInFlightRef.current) return;
@@ -486,7 +485,6 @@ export default function FarmGame() {
             } else {
               const r = await res.json().catch(() => ({ error: 'No fertilizer available.' }));
               flash(`❌ ${r.error}`);
-              setTimeout(pushFarmStateToGodot, 150);
             }
           } finally {
             fertInFlightRef.current = false;
