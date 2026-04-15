@@ -1,9 +1,10 @@
 require('dotenv').config();
 
-const express        = require('express');
-const cors           = require('cors');
-const path           = require('path');
-const fs             = require('fs');
+const express          = require('express');
+const cors             = require('cors');
+const path             = require('path');
+const fs               = require('fs');
+const rateLimit        = require('express-rate-limit');
 const { createClient } = require('@libsql/client');
 
 const app = express();
@@ -111,6 +112,57 @@ function parseAlbOidcJwt(token) {
   } catch { return null; }
 }
 
+// ─── Auth middleware ────────────────────────────────────────────────────────
+// Derives the authenticated user from the Okta ALB OIDC header.
+// Attaches req.userId (DB integer) and req.currentUser to the request.
+// Falls back to LocalDevUser on localhost so local dev still works.
+// Returns 401 if no identity can be established.
+async function requireAuth(req, res, next) {
+  try {
+    const oidcData = req.headers['x-amzn-oidc-data'];
+    let username = null;
+    if (oidcData) {
+      const claims = parseAlbOidcJwt(oidcData);
+      if (claims) {
+        const email       = claims.preferred_username || claims.email || '';
+        const emailPrefix = email.includes('@') ? email.split('@')[0] : email;
+        const firstName   = claims.given_name || emailPrefix || claims.sub;
+        const lastInitial = claims.family_name
+          ? claims.family_name.trim().charAt(0).toUpperCase() + '.'
+          : '';
+        username = lastInitial ? `${firstName} ${lastInitial}` : firstName;
+      }
+    }
+
+    const isLocal = req.hostname === 'localhost' || req.hostname === '127.0.0.1';
+    if (!username) {
+      if (isLocal) username = 'LocalDevUser';
+      else return res.status(401).json({ error: 'Unauthenticated.' });
+    }
+
+    const user = await getUserByName(username.trim());
+    if (!user) return res.status(401).json({ error: 'Unauthenticated: user not found.' });
+
+    req.userId      = Number(user.id);
+    req.currentUser = user;
+    next();
+  } catch (err) {
+    console.error('[requireAuth]', err);
+    res.status(500).json({ error: 'Auth check failed.' });
+  }
+}
+
+// ─── Rate limiter for write endpoints ───────────────────────────────────────
+// 60 write actions per minute per IP is very generous for a farming game.
+// Prevents bulk-scripting attacks against the economy endpoints.
+const writeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max:      60,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message: { error: 'Too many requests, please slow down.' },
+});
+
 // ─── Routes ────────────────────────────────────────────────────────────────
 
 app.get('/api/version', (_req, res) => res.json({ v: '2026-04-13-tx-select' }));
@@ -194,9 +246,11 @@ app.get('/api/auth/me', async (req, res) => {
   }
 });
 
-// GET /api/users
+// GET /api/users — public directory; coins/fertilizer are private
 app.get('/api/users', async (_req, res) => {
-  const { rows } = await db.execute("SELECT * FROM users WHERE username != 'LocalDevUser' ORDER BY id ASC");
+  const { rows } = await db.execute(
+    "SELECT id, username, profile_image, farm_state FROM users WHERE username != 'LocalDevUser' ORDER BY id ASC"
+  );
   res.json(rows);
 });
 
@@ -233,36 +287,35 @@ app.get('/api/farm/:userId', async (req, res) => {
 });
 
 // POST /api/kudos/leave
-app.post('/api/kudos/leave', async (req, res) => {
-  const { sender_id, sender_name, receiver_id, message } = req.body;
-  if (!(sender_name ?? '').trim()) return res.status(400).json({ error: 'sender_name is required.' });
-  if (!(message    ?? '').trim()) return res.status(400).json({ error: 'message is required.'     });
+// sender identity is derived from the session — never trusted from the body
+app.post('/api/kudos/leave', requireAuth, writeLimiter, async (req, res) => {
+  const { receiver_id, message } = req.body;
+  const senderId   = req.userId;
+  const senderName = req.currentUser.username;
+
+  if (!(message ?? '').trim()) return res.status(400).json({ error: 'message is required.' });
 
   const receiver = await getUser(Number(receiver_id));
   if (!receiver) return res.status(404).json({ error: 'Receiver not found.' });
 
   await db.execute({
     sql: 'INSERT INTO kudos (sender_id, sender_name, receiver_id, message) VALUES (?, ?, ?, ?)',
-    args: [sender_id ? Number(sender_id) : null, sender_name.trim(), Number(receiver_id), message.trim()],
+    args: [senderId, senderName, Number(receiver_id), message.trim()],
   });
 
   // Receiver gets +2 coins; sender gets +1 fertilizer
   await db.execute({ sql: 'UPDATE users SET coins = coins + 2 WHERE id = ?', args: [Number(receiver_id)] });
+  await db.execute({ sql: 'UPDATE users SET fertilizer = fertilizer + 1 WHERE id = ?', args: [senderId] });
 
-  let updatedSender = null;
-  if (sender_id) {
-    await db.execute({ sql: 'UPDATE users SET fertilizer = fertilizer + 1 WHERE id = ?', args: [Number(sender_id)] });
-    updatedSender = await getUser(Number(sender_id));
-  }
-
+  const updatedSender   = await getUser(senderId);
   const updatedReceiver = await getUser(Number(receiver_id));
   res.json({ success: true, receiver: updatedReceiver, sender: updatedSender });
 });
 
 // POST /api/shop/buy
-app.post('/api/shop/buy', async (req, res) => {
-  const { user_id, item_name } = req.body;
-  const userId = Number(user_id);
+app.post('/api/shop/buy', requireAuth, writeLimiter, async (req, res) => {
+  const { item_name } = req.body;
+  const userId = req.userId;
 
   if (!item_name || !item_name.trim()) {
     return res.status(400).json({ error: 'item_name is required.' });
@@ -301,9 +354,9 @@ app.get('/api/inventory/:userId', async (req, res) => {
 });
 
 // POST /api/farm/place
-app.post('/api/farm/place', async (req, res) => {
-  const { user_id, item_name, item_type, pot_id, home_x, home_y } = req.body;
-  const userId = Number(user_id);
+app.post('/api/farm/place', requireAuth, writeLimiter, async (req, res) => {
+  const { item_name, item_type, pot_id, home_x, home_y } = req.body;
+  const userId = req.userId;
 
   const user = await getUser(userId);
   if (!user) return res.status(404).json({ error: 'User not found.' });
@@ -340,9 +393,9 @@ app.post('/api/farm/place', async (req, res) => {
 });
 
 // POST /api/farm/save
-app.post('/api/farm/save', async (req, res) => {
-  const { user_id, farm_state: rawState } = req.body;
-  const userId = Number(user_id);
+app.post('/api/farm/save', requireAuth, writeLimiter, async (req, res) => {
+  const { farm_state: rawState } = req.body;
+  const userId = req.userId;
 
   if (!rawState) return res.status(400).json({ error: 'farm_state is required.' });
 
@@ -420,9 +473,9 @@ app.post('/api/farm/save', async (req, res) => {
 });
 
 // POST /api/farm/plant-seed
-app.post('/api/farm/plant-seed', async (req, res) => {
-  const { user_id, pot_id, seed } = req.body;
-  const userId = Number(user_id);
+app.post('/api/farm/plant-seed', requireAuth, writeLimiter, async (req, res) => {
+  const { pot_id, seed } = req.body;
+  const userId = req.userId;
 
   const rawPotId  = String(pot_id ?? '').trim();
   const normPotId = /^\d+$/.test(rawPotId) ? `pot${rawPotId}` : rawPotId;
@@ -457,9 +510,9 @@ app.post('/api/farm/plant-seed', async (req, res) => {
 });
 
 // POST /api/farm/place-animal
-app.post('/api/farm/place-animal', async (req, res) => {
-  const { user_id, animal, x, y } = req.body;
-  const userId = Number(user_id);
+app.post('/api/farm/place-animal', requireAuth, writeLimiter, async (req, res) => {
+  const { animal, x, y } = req.body;
+  const userId = req.userId;
 
   if (!animal) return res.status(400).json({ error: 'animal is required.' });
 
@@ -482,10 +535,10 @@ app.post('/api/farm/place-animal', async (req, res) => {
 });
 
 // POST /api/farm/harvest
-app.post('/api/farm/harvest', async (req, res) => {
+app.post('/api/farm/harvest', requireAuth, writeLimiter, async (req, res) => {
   try {
-    const { user_id, pot_id, crop, viewed_farm_id } = req.body;
-    const userId = Number(user_id);
+    const { pot_id, crop, viewed_farm_id } = req.body;
+    const userId = req.userId;
 
     if (viewed_farm_id == null || String(viewed_farm_id) !== String(userId)) {
       return res.status(403).json({ error: 'Crop theft blocked: you do not own this farm.' });
@@ -534,10 +587,10 @@ app.post('/api/farm/harvest', async (req, res) => {
 
 // POST /api/sell
 // Sells one unit of a fully harvested crop from inventory for its sell_value in coins.
-app.post('/api/sell', async (req, res) => {
+app.post('/api/sell', requireAuth, writeLimiter, async (req, res) => {
   try {
-    const { user_id, crop_name } = req.body;
-    const userId = Number(user_id);
+    const { crop_name } = req.body;
+    const userId = req.userId;
 
     if (!crop_name) return res.status(400).json({ error: 'crop_name is required.' });
 
@@ -596,10 +649,10 @@ app.post('/api/sell', async (req, res) => {
 });
 
 // POST /api/farm/fertilize
-app.post('/api/farm/fertilize', async (req, res) => {
+app.post('/api/farm/fertilize', requireAuth, writeLimiter, async (req, res) => {
   try {
-    const { user_id, pot_id, viewed_farm_id } = req.body;
-    const userId = Number(user_id);
+    const { pot_id, viewed_farm_id } = req.body;
+    const userId = req.userId;
 
     if (viewed_farm_id == null || String(viewed_farm_id) !== String(userId)) {
       return res.status(403).json({ error: 'Action blocked: you do not own the farm you are trying to modify.' });
@@ -679,9 +732,9 @@ app.post('/api/farm/fertilize', async (req, res) => {
 });
 
 // POST /api/harvest  — legacy endpoint
-app.post('/api/harvest', async (req, res) => {
-  const { user_id, farm_item_id, crop_name } = req.body;
-  const userId = Number(user_id);
+app.post('/api/harvest', requireAuth, writeLimiter, async (req, res) => {
+  const { farm_item_id, crop_name } = req.body;
+  const userId = req.userId;
 
   const { rows: [item] } = await db.execute({
     sql: 'SELECT * FROM farm_items WHERE id = ? AND user_id = ?',
@@ -696,9 +749,9 @@ app.post('/api/harvest', async (req, res) => {
 });
 
 // POST /api/fertilize  — legacy endpoint
-app.post('/api/fertilize', async (req, res) => {
-  const { user_id, farm_item_id } = req.body;
-  const userId = Number(user_id);
+app.post('/api/fertilize', requireAuth, writeLimiter, async (req, res) => {
+  const { farm_item_id } = req.body;
+  const userId = req.userId;
 
   const user = await getUser(userId);
   if (!user) return res.status(404).json({ error: 'User not found.' });
@@ -768,17 +821,14 @@ app.get('/api/neighborhood/board', async (_req, res) => {
 
 // ─── Dev helpers (disabled in production) ────────────────────────────────────
 if (process.env.NODE_ENV !== 'production') {
-  app.post('/api/dev/add-resources', async (req, res) => {
-    const { user_id, coins = 20, fertilizer = 10 } = req.body;
-    const user = await getUser(Number(user_id));
-    if (!user) return res.status(404).json({ error: 'User not found.' });
-
+  app.post('/api/dev/add-resources', requireAuth, async (req, res) => {
+    const { coins = 20, fertilizer = 10 } = req.body;
+    const userId = req.userId;
     await db.execute({
       sql: 'UPDATE users SET coins = coins + ?, fertilizer = fertilizer + ? WHERE id = ?',
-      args: [Number(coins), Number(fertilizer), Number(user_id)],
+      args: [Number(coins), Number(fertilizer), userId],
     });
-
-    res.json({ user: await getUser(Number(user_id)) });
+    res.json({ user: await getUser(userId) });
   });
 }
 
