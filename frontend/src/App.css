@@ -1939,6 +1939,201 @@ body {
   line-height:    1;
 }
 
+/* ════════════════════════════════════════════════════════════════
+   KUDOS TICKER BANNER  (kb-)
+   Full-width scrolling marquee between hero and main content.
+   GPU-safe: only transform animated.
+════════════════════════════════════════════════════════════════ */
+
+.kb-banner {
+  position:   relative;
+  display:    flex;
+  align-items: stretch;
+  width:      100%;
+  background: #010503;
+  border-top:    2px solid #162c14;
+  border-bottom: 2px solid #162c14;
+  overflow:   hidden;
+  z-index:    3;
+  /* Diagonal sash: skew the stripe without clipping edges or creating scroll */
+  transform:  skewY(-1.5deg);
+  /* Extra vertical room so the angled corners don't look thin */
+  margin:     6px 0;
+  /* Entrance: slide up with the rest of the hero */
+  animation:  nb-title-in 0.6s 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ── Left label pill ── */
+.kb-banner__label {
+  flex-shrink:  0;
+  display:      flex;
+  align-items:  center;
+  gap:          6px;
+  padding:      0 20px 0 22px;
+  /* Counter-skew so the label text stays perfectly upright */
+  transform:    skewY(1.5deg);
+  font-family:  var(--font-pixel);
+  font-size:    1.15rem;
+  letter-spacing: 4px;
+  color:        #86efac;
+  background:   #050f05;
+  border-right: 2px solid #162c14;
+  white-space:  nowrap;
+  text-shadow:  0 0 20px rgba(134,239,172,0.5);
+  /* Subtle inner highlight on top */
+  box-shadow:   inset 0 1px 0 rgba(134,239,172,0.05);
+}
+
+.kb-banner__label-star {
+  color:        #fbbf24;
+  text-shadow:  0 0 14px rgba(251,191,36,0.55);
+  animation:    kb-star-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes kb-star-pulse {
+  0%, 100% { opacity: 1;   text-shadow: 0 0 14px rgba(251,191,36,0.55); }
+  50%       { opacity: 0.6; text-shadow: 0 0 28px rgba(251,191,36,0.85); }
+}
+
+/* ── Scroll track with edge fades ── */
+.kb-banner__track {
+  flex:     1;
+  overflow: hidden;
+  /* Fade edges so items drift in/out smoothly — no hard cut */
+  mask-image: linear-gradient(
+    to right,
+    transparent 0px,
+    black 60px,
+    black calc(100% - 60px),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0px,
+    black 60px,
+    black calc(100% - 60px),
+    transparent 100%
+  );
+  transition: overflow 0s;
+}
+
+/* When banner is hovered (marquee frozen), let pills overflow
+   so their expanded message isn't clipped by the track edge */
+.kb-banner:hover .kb-banner__track {
+  overflow: visible;
+}
+
+/* ── The scrolling row ── */
+.kb-banner__inner {
+  display:     inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  padding:     11px 0;
+  animation:   kb-scroll linear infinite;
+  will-change: transform;
+  /* Counter-skew so the scrolling text stays upright */
+  transform:   skewY(1.5deg);
+}
+
+/* Pause on hover — lets users read a kudo */
+.kb-banner:hover .kb-banner__inner {
+  animation-play-state: paused;
+}
+
+@keyframes kb-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* ── Pill card — each kudo is a self-contained unit ── */
+.kb-banner__pill {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           10px;
+  margin-right:  20px;
+  padding:       5px 16px 5px 13px;
+  /* Subtle dark-green pill background — separates items without heavy borders */
+  background:    #050e05;
+  border:        1px solid #1a3018;
+  border-radius: 2px;
+  font-family:   var(--font-pixel);
+  font-size:     1.25rem;
+  line-height:   1;
+  /* Soft inner top highlight for depth */
+  box-shadow:    inset 0 1px 0 rgba(134,239,172,0.04),
+                 0 2px 8px rgba(0,0,0,0.4);
+  transition:    border-color 0.2s, box-shadow 0.2s;
+}
+
+/* Hovered pill comes to front and glows more */
+.kb-banner__pill:hover {
+  z-index:      20;
+  border-color: #3a6830;
+  box-shadow:   inset 0 1px 0 rgba(134,239,172,0.08),
+                0 4px 20px rgba(0,0,0,0.65),
+                0 0 0 1px rgba(134,239,172,0.10);
+}
+
+/* Names group — sender + arrow + receiver */
+.kb-banner__names {
+  display:     inline-flex;
+  align-items: center;
+  gap:         7px;
+  flex-shrink: 0; /* names never get cut */
+}
+
+/* Sender — green */
+.kb-banner__from {
+  color:          #86efac;
+  font-size:      1.3rem;
+  text-shadow:    0 0 12px rgba(134,239,172,0.35);
+  letter-spacing: 1px;
+}
+
+/* Arrow */
+.kb-banner__arrow {
+  color:     #253e22;
+  font-size: 0.95rem;
+}
+
+/* Receiver — gold */
+.kb-banner__to {
+  color:          #fbbf24;
+  font-size:      1.3rem;
+  text-shadow:    0 0 10px rgba(251,191,36,0.28);
+  letter-spacing: 1px;
+}
+
+/* Vertical divider between names and message */
+.kb-banner__divider {
+  color:       #1e3a1c;
+  font-size:   1.1rem;
+  margin:      0 2px;
+  flex-shrink: 0;
+}
+
+/* Message — visually collapsed by default; expands on pill hover */
+.kb-banner__msg {
+  color:       #3a6235;
+  font-style:  italic;
+  font-size:   1.15rem;
+  /* Collapsed state: limited width + right-edge fade */
+  max-width:   260px;
+  overflow:    hidden;
+  white-space: nowrap;
+  mask-image:         linear-gradient(to right, black 75%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black 75%, transparent 100%);
+  /* Smooth expansion — only max-width animates; mask swaps instantly */
+  transition:  max-width 0.38s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* Expanded state: full message visible */
+.kb-banner__pill:hover .kb-banner__msg {
+  max-width:          800px;
+  mask-image:         none;
+  -webkit-mask-image: none;
+}
+
 /* ── Respect reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

@@ -782,6 +782,24 @@ app.post('/api/fertilize', requireAuth, writeLimiter, async (req, res) => {
   });
 });
 
+// GET /api/kudos/recent — latest 30 kudos across all users for the neighborhood banner
+app.get('/api/kudos/recent', async (_req, res) => {
+  try {
+    const { rows } = await db.execute(`
+      SELECT k.message, k.sender_name, k.timestamp, u.username AS receiver_name
+      FROM kudos k
+      LEFT JOIN users u ON u.id = k.receiver_id
+      WHERE k.sender_name IS NOT NULL AND k.message IS NOT NULL
+      ORDER BY k.timestamp DESC
+      LIMIT 30
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error('[kudos/recent]', err);
+    res.status(500).json({ error: 'Could not load recent kudos.' });
+  }
+});
+
 // GET /api/config
 app.get('/api/config', (_req, res) => {
   res.json({ shop: SHOP_CONFIG, layout: LAYOUT_CONFIG });

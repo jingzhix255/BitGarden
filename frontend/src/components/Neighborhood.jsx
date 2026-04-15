@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '../App.jsx';
 import AnnouncementBoard from './AnnouncementBoard.jsx';
+import KudosBanner from './KudosBanner.jsx';
 
 // ─── Weather System ────────────────────────────────────────────────────────────
 
@@ -301,6 +302,9 @@ export default function Neighborhood() {
             widgetRef={widgetRef}
           />
         </div>
+
+        {/* ── Rolling kudos banner ── */}
+        <KudosBanner />
 
         {/* ── Body ── */}
         <main className="nb-main">
