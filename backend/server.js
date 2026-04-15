@@ -246,10 +246,11 @@ app.get('/api/auth/me', async (req, res) => {
   }
 });
 
-// GET /api/users — public directory; coins/fertilizer are private
+// GET /api/users — neighborhood directory; coins & fertilizer are visible
+// to authenticated colleagues (all traffic is behind Okta in production)
 app.get('/api/users', async (_req, res) => {
   const { rows } = await db.execute(
-    "SELECT id, username, profile_image, farm_state FROM users WHERE username != 'LocalDevUser' ORDER BY id ASC"
+    "SELECT id, username, profile_image, farm_state, coins, fertilizer FROM users WHERE username != 'LocalDevUser' ORDER BY id ASC"
   );
   res.json(rows);
 });
