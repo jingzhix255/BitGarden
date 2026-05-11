@@ -2,7 +2,7 @@
 
 A pixel-art farming game for Hiya teammates. Buy seeds, grow crops, place animals, and leave kudos on your colleagues' farms. Built with Godot 4 (HTML5 export), React, and Node.js.
 
-**Live:** [bitgarden.ez.hiya.dev](https://bitgarden.ez.hiya.dev)
+**Live:** [bitgarden.ez.hiya.dev](https://bitgarden.ez.hiya.dev) internal access only
 
 <video src="https://github.com/jingzhix255/BitGarden/raw/main/bit-garden-compressed.mp4" controls width="100%"></video>
 
