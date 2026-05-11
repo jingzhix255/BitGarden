@@ -4,7 +4,7 @@ A pixel-art farming game for Hiya teammates. Buy seeds, grow crops, place animal
 
 **Live:** [bitgarden.ez.hiya.dev](https://bitgarden.ez.hiya.dev)
 
-https://github.com/jingzhix255/BitGarden/raw/main/bit-garden-compressed.mp4
+<video src="https://github.com/jingzhix255/BitGarden/raw/main/bit-garden-compressed.mp4" controls width="100%"></video>
 
 ---
 
